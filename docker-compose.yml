@@ -1,39 +1,63 @@
-# التشغيل على السيرفر:  docker compose up -d
+# التشغيل على السيرفر:  docker compose up -d --build
+# المتطلبات: ملف .env (انسخه من .env.example) وملف deploy/mosquitto/passwd (ينشئه deploy/setup.sh)
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: arakom
+      POSTGRES_USER: arakom
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ضع POSTGRES_PASSWORD في ملف .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arakom"]
+      interval: 5s
+      retries: 10
+
   mosquitto:
     image: eclipse-mosquitto:2
     restart: unless-stopped
     ports:
-      - "1883:1883"     # منفذ اتصال الكاميرات
+      - "1883:1883"   # منفذ اتصال الكاميرات
     volumes:
       - ./deploy/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./deploy/mosquitto/passwd:/mosquitto/config/passwd:ro
       - ./deploy/mosquitto/acl:/mosquitto/config/acl:ro
-      - ./deploy/mosquitto/data:/mosquitto/data
+      - ./deploy/mosquitto/passwd:/mosquitto/config/passwd:ro
+      - mqttdata:/mosquitto/data
 
-  dashboard:
+  backend:
     build: .
     restart: unless-stopped
-    depends_on: [mosquitto]
+    depends_on:
+      postgres: { condition: service_healthy }
+      mosquitto: { condition: service_started }
     env_file: .env
     environment:
+      DATABASE_URL: postgres://arakom:${POSTGRES_PASSWORD}@postgres:5432/arakom
       MQTT_URL: mqtt://mosquitto:1883
-      DATA_DIR: /data
-    ports:
-      - "127.0.0.1:3000:3000"   # يُفتح للعالم عبر Caddy (HTTPS)
+      MEDIA_DIR: /data/media
     volumes:
-      - ./data:/data
+      - media:/data
+    ports:
+      - "127.0.0.1:4000:4000"
 
   caddy:
     image: caddy:2
     restart: unless-stopped
-    # يستخدم شبكة السيرفر مباشرة (المنافذ 80 و 443)
+    depends_on: [backend]
+    ports:
+      - "80:80"
+      - "443:443"
     environment:
-      DOMAIN: ${DOMAIN:-localhost}
+      ADMIN_HOST: ${ADMIN_HOST:-admin.arakom.sa}
+      APP_HOST: ${APP_HOST:-app.arakom.sa}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-    network_mode: host
+      - caddydata:/data
 
 volumes:
-  caddy_data:
+  pgdata:
+  mqttdata:
+  media:
+  caddydata:

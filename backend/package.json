@@ -1,0 +1,28 @@
+{
+  "name": "arakom-backend",
+  "version": "2.0.0",
+  "private": true,
+  "description": "أراكم - الخادم: API + MQTT + Socket.io",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "migrate": "node src/db/migrate.js",
+    "seed:admin": "node src/db/seed-admin.js",
+    "simulate": "node ../tools/camera-simulator.js",
+    "test": "node --test test/*.test.js",
+    "broker:dev": "node ../tools/dev-broker.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "mqtt": "^5.16.1",
+    "pg": "^8.23.1",
+    "socket.io": "^4.8.4"
+  },
+  "devDependencies": {
+    "aedes": "^0.51.3"
+  }
+}

@@ -1,7 +1,9 @@
-# شهادة HTTPS مجانية وتلقائية لنطاقك (مطلوبة لتثبيت التطبيق على الجوال والإشعارات)
-{$DOMAIN} {
+# شهادات HTTPS مجانية وتلقائية للنطاقين
+# admin.arakom.sa → لوحة الإدارة العليا ، app.arakom.sa → لوحة المجمعات (+ ويب هوك سلة)
+{$ADMIN_HOST}, {$APP_HOST} {
 	encode gzip
-	reverse_proxy 127.0.0.1:3000 {
-		flush_interval -1
+	header {
+		Strict-Transport-Security "max-age=31536000"
 	}
+	reverse_proxy backend:4000
 }

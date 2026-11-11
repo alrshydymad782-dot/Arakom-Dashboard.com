@@ -1,6 +1,8 @@
-node_modules
+**/node_modules
+frontend/dist
+backend/media
 data
 .git
 .env
 deploy/mosquitto/data
-deploy/mosquitto/log
+deploy/mosquitto/passwd

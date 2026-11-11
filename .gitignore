@@ -1,7 +1,9 @@
 node_modules/
+dist/
 data/
+backend/media/
 .env
 *.log
-deploy/mosquitto/data/
-deploy/mosquitto/log/
 deploy/mosquitto/passwd
+deploy/mosquitto/data/
+deploy/CREDENTIALS.txt

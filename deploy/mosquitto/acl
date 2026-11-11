@@ -1,7 +1,18 @@
-# لوحة التحكم: صلاحية كاملة
-user dashboard
+# ===== صلاحيات المواضيع =====
+
+# الخادم (لوحة التحكم): صلاحية كاملة
+user arakom-backend
 topic readwrite #
 
-# الكاميرات: كل كاميرا تستخدم الحساب "camera" (أو حساباً خاصاً لكل كاميرا)
+# الكاميرات: تسجّل على /serverAll وتنشر القراءات وتستقبل الأوامر
 user camera
-topic readwrite device/#
+topic write /serverAll
+topic readwrite aiot/#
+topic read device/#
+topic write arakom/gates/+/readings
+topic write arakom/gates/+/readings/+
+topic read arakom/devices/#
+
+# جهاز ريليه خارجي (اختياري): يستقبل أمر OPEN_BARRIER فقط
+user relay
+topic read arakom/gates/+/command

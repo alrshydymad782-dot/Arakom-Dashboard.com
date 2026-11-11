@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* الوضع الداكن يعمل عبر الصنف .dark على <html> */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "IBM Plex Sans Arabic", system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif;
+  --color-brand-50: #e8f7f1;
+  --color-brand-100: #c6ebdc;
+  --color-brand-500: #14a37a;
+  --color-brand-600: #0b7a5a;
+  --color-brand-700: #0a6349;
+  --color-ink-950: #0b1220;
+  --color-ink-900: #111a2c;
+  --color-ink-800: #1a2539;
+  --color-ink-700: #26334b;
+}
+
+@layer base {
+  html { -webkit-tap-highlight-color: transparent; }
+  body { @apply bg-slate-50 text-slate-900 antialiased dark:bg-ink-950 dark:text-slate-100; }
+  input, select, textarea { @apply text-slate-900 dark:text-slate-100; }
+}
+
+@utility card {
+  @apply rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-ink-700 dark:bg-ink-900;
+}
+@utility input {
+  @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-ink-700 dark:bg-ink-800;
+}
+@utility label {
+  @apply mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400;
+}
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-brand-600 text-white hover:bg-brand-700;
+}
+@utility btn-ghost {
+  @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-ink-700 dark:bg-ink-800 dark:text-slate-200 dark:hover:bg-ink-700;
+}
+@utility btn-danger {
+  @apply btn bg-rose-600 text-white hover:bg-rose-700;
+}
+@utility btn-sm {
+  @apply px-3 py-1.5 text-xs;
+}
+@utility th {
+  @apply px-3 py-2.5 text-start text-xs font-semibold whitespace-nowrap text-slate-500 dark:text-slate-400;
+}
+@utility td {
+  @apply px-3 py-2.5 text-sm whitespace-nowrap;
+}
+
+/* تقرير PDF: يُطبع فقط محتوى #print-root */
+#print-root { display: none; }
+@media print {
+  body > #root { display: none !important; }
+  #print-root { display: block !important; }
+  @page { size: A4 landscape; margin: 12mm; }
+  body { background: #fff !important; color: #000 !important; }
+}
+
+@keyframes flash-in { from { background-color: rgb(20 163 122 / .18); } to { background-color: transparent; } }
+.flash { animation: flash-in 2s ease-out; }
