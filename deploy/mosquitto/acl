@@ -1,0 +1,7 @@
+# لوحة التحكم: صلاحية كاملة
+user dashboard
+topic readwrite #
+
+# الكاميرات: كل كاميرا تستخدم الحساب "camera" (أو حساباً خاصاً لكل كاميرا)
+user camera
+topic readwrite device/#

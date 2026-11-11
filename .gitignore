@@ -1,0 +1,7 @@
+node_modules/
+data/
+.env
+*.log
+deploy/mosquitto/data/
+deploy/mosquitto/log/
+deploy/mosquitto/passwd

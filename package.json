@@ -1,0 +1,21 @@
+{
+  "name": "arakom-dashboard",
+  "version": "1.0.0",
+  "description": "لوحة تحكم أنظمة التعرف على لوحات المركبات (ANPR/LPR) عبر MQTT - مخصصة للسعودية ودول الخليج",
+  "main": "server/index.js",
+  "private": true,
+  "scripts": {
+    "start": "node --no-warnings server/index.js",
+    "dev": "EMBEDDED_BROKER=1 node --no-warnings server/index.js",
+    "simulate": "node tools/simulator.js",
+    "test": "node --no-warnings --test test/*.test.js"
+  },
+  "engines": { "node": ">=22.5" },
+  "dependencies": {
+    "express": "^5.1.0",
+    "mqtt": "^5.10.0"
+  },
+  "optionalDependencies": {
+    "aedes": "^0.51.3"
+  }
+}

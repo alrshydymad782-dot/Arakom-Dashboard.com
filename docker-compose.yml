@@ -1,0 +1,39 @@
+# التشغيل على السيرفر:  docker compose up -d
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "1883:1883"     # منفذ اتصال الكاميرات
+    volumes:
+      - ./deploy/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./deploy/mosquitto/passwd:/mosquitto/config/passwd:ro
+      - ./deploy/mosquitto/acl:/mosquitto/config/acl:ro
+      - ./deploy/mosquitto/data:/mosquitto/data
+
+  dashboard:
+    build: .
+    restart: unless-stopped
+    depends_on: [mosquitto]
+    env_file: .env
+    environment:
+      MQTT_URL: mqtt://mosquitto:1883
+      DATA_DIR: /data
+    ports:
+      - "127.0.0.1:3000:3000"   # يُفتح للعالم عبر Caddy (HTTPS)
+    volumes:
+      - ./data:/data
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    # يستخدم شبكة السيرفر مباشرة (المنافذ 80 و 443)
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    network_mode: host
+
+volumes:
+  caddy_data:
