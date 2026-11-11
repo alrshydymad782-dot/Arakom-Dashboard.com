@@ -5,15 +5,15 @@
  * ------------------------------------------------------------
  * - التحقق من التوقيع: سلة ترسل الترويسة X-Salla-Signature = HMAC-SHA256(جسم الطلب الخام، مفتاح الويب هوك)
  * - ربط الدفعة بالمجمع: بمعرّف عميل سلة، ثم البريد، ثم رقم الجوال
- * - ربط المنتج بالباقة: عبر SKU المنتج = plans.salla_sku (المدة بالأشهر × الكمية)
- * - إن كان التجديد التلقائي مفعلاً للمجمع: يُمدد الاشتراك فوراً
- *   وإلا: تُحفظ الدفعة "بانتظار موافقة الإدارة"
+ * - مدة الاشتراك (شهر / 3 / 6 / سنة) تُستنتج من رمز المنتج SKU أو اسمه في سلة، مثل ARAKOM-3M أو "اشتراك 3 أشهر"
+ * - عند التعرف على المجمع والمدة: يُمدد الاشتراك فوراً
+ *   وإلا: تُحفظ الدفعة "غير مطابقة" لتربطها الإدارة يدوياً
  * - كل طلب يُعالج مرة واحدة فقط (order_id فريد)
  */
 const express = require('express');
 const crypto = require('node:crypto');
 const config = require('../config');
-const { one, query, tx } = require('../db');
+const { one, tx } = require('../db');
 const { fail } = require('../http');
 const subs = require('../services/subscriptions');
 const realtime = require('../realtime');
@@ -50,7 +50,7 @@ function extractOrder(body) {
       phone: c.mobile ? `${c.mobile_code || ''}${c.mobile}` : c.phone || null,
       email: c.email || null,
     },
-    items: items.map((i) => ({ sku: i.sku ? String(i.sku) : null, quantity: Number(i.quantity) || 1, name: i.name })),
+    items: items.map((i) => ({ sku: i.sku ? String(i.sku) : null, quantity: Number(i.quantity) || 1, name: i.name || i.product?.name || null })),
   };
 }
 
@@ -71,11 +71,10 @@ async function findTenant(cust) {
   return null;
 }
 
-async function findPlan(items) {
+function findDuration(items) {
   for (const it of items) {
-    if (!it.sku) continue;
-    const p = await one('SELECT * FROM plans WHERE salla_sku = $1 AND active', [it.sku]);
-    if (p) return { plan: p, quantity: it.quantity, sku: it.sku };
+    const months = subs.monthsFromProduct(it);
+    if (months) return { months, quantity: Math.min(Math.max(it.quantity, 1), 5), sku: it.sku, name: it.name };
   }
   return null;
 }
@@ -88,11 +87,14 @@ async function applyPayment(paymentId, tenantId, monthsOverride) {
     if (p.status === 'applied') fail(409, 'هذه الدفعة طُبقت مسبقاً');
     const tId = tenantId || p.tenant_id;
     if (!tId) fail(400, 'حدد المجمع');
-    const plan = p.sku ? (await c.query('SELECT * FROM plans WHERE salla_sku = $1', [p.sku])).rows[0] : null;
-    const qty = Number(p.raw?.data?.items?.find((i) => String(i.sku) === p.sku)?.quantity) || 1;
-    const months = monthsOverride || (plan ? plan.duration_months * qty : null);
-    if (!months) fail(400, 'حدد عدد الأشهر (المنتج غير مرتبط بباقة)');
-    const sub = await subs.extend(c, tId, months, { maxVehicles: plan?.max_vehicles ?? null, planId: plan?.id ?? null });
+    // المدة: من اختيار الإدارة، أو من المنتج في الطلب (الكمية 2 من "3 أشهر" = 6 أشهر)
+    const detected = findDuration(extractOrder(p.raw || {}).items);
+    const duration = monthsOverride || detected?.months;
+    if (!duration) fail(400, 'اختر مدة الاشتراك (لم نتعرف عليها من منتج سلة)');
+    const times = monthsOverride ? 1 : detected.quantity;
+    let sub;
+    for (let i = 0; i < times; i++) sub = await subs.extend(c, tId, duration);
+    const months = duration * times;
     await c.query("UPDATE payments SET status = 'applied', tenant_id = $2, months_added = $3 WHERE id = $1", [paymentId, tId, months]);
     // حفظ معرّف عميل سلة لربط الدفعات القادمة تلقائياً
     const custId = p.raw?.data?.customer?.id;
@@ -118,17 +120,18 @@ router.post('/', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) =>
   if (!config.salla.paidStatuses.includes(o.status)) return res.json({ ok: true, ignored: 'status', status: o.status });
 
   try {
-    const [tenant, planMatch] = await Promise.all([findTenant(o.customer), findPlan(o.items)]);
-    const sub = tenant ? await one('SELECT auto_renew FROM subscriptions WHERE tenant_id = $1', [tenant.id]) : null;
-    const status = !tenant || !planMatch ? 'unmatched' : (sub?.auto_renew ? 'applied' : 'pending');
+    const tenant = await findTenant(o.customer);
+    const duration = findDuration(o.items);
+    const status = tenant && duration ? 'applied' : 'unmatched';
 
     // order_id فريد: إن وصلت نفس الدفعة مرة ثانية لا تُطبّق مرتين
     const p = await one(`INSERT INTO payments (tenant_id, event, order_id, reference_id, amount, currency, customer_name, customer_phone,
-        customer_email, sku, status, raw)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        customer_email, sku, product_name, status, raw)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
       ON CONFLICT (provider, order_id) DO NOTHING RETURNING id`,
     [tenant?.id ?? null, event, o.orderId, o.referenceId, o.amount, o.currency, o.customer.name, o.customer.phone,
-      o.customer.email, planMatch?.sku ?? o.items[0]?.sku ?? null, status === 'applied' ? 'pending' : status, body]);
+      o.customer.email, duration?.sku ?? o.items[0]?.sku ?? null, duration?.name ?? o.items[0]?.name ?? null,
+      status === 'applied' ? 'pending' : status, body]);
     if (!p) return res.json({ ok: true, duplicate: true });
 
     let result = { status };

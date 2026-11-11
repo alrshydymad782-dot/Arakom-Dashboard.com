@@ -1,19 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { fmtDate, fmtDateTime, randomPassword, timeAgo } from '../lib/format';
+import { fmtDate, fmtDateTime, randomPassword, timeAgo, DURATIONS, durationLabel, daysLeftText } from '../lib/format';
 import { Badge, Empty, Field, Icon, Modal, OnlineDot, PageHeader, Spinner, useAction } from '../components/ui';
 
 export default function TenantDetail() {
   const { id } = useParams();
   const nav = useNavigate();
   const [d, setD] = useState(null);
-  const [plans, setPlans] = useState([]);
   const [modal, setModal] = useState(null); // { type, data }
   const [run, busy] = useAction();
 
   const load = useCallback(() => api(`/admin/tenants/${id}`).then(setD), [id]);
-  useEffect(() => { load(); api('/admin/plans').then(setPlans); }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   if (!d) return <Spinner />;
   const { tenant: t, subscription: s } = d;
@@ -33,8 +32,8 @@ export default function TenantDetail() {
     e.preventDefault();
     const m = modal.type;
     if (m === 'info') return run(() => api(`/admin/tenants/${id}`, { method: 'PATCH', body: form }), 'تم الحفظ').then(done);
-    if (m === 'sub') return run(() => api(`/admin/tenants/${id}/subscription`, { method: 'PUT', body: form }), 'تم تحديث الاشتراك').then(done);
-    if (m === 'extend') return run(() => api(`/admin/tenants/${id}/subscription/extend`, { body: form }), 'تم تمديد الاشتراك').then(done);
+    if (m === 'sub') return run(() => api(`/admin/tenants/${id}/subscription`, { method: 'PATCH', body: form }), 'تم تحديث الاشتراك').then(done);
+    if (m === 'extend') return run(() => api(`/admin/tenants/${id}/subscription/extend`, { body: form }), `تمت إضافة ${durationLabel(form.months)} للاشتراك`).then(done);
     if (m === 'gate') return run(() => (form.id ? api(`/admin/gates/${form.id}`, { method: 'PATCH', body: form }) : api(`/admin/tenants/${id}/gates`, { body: form })), 'تم الحفظ').then(done);
     if (m === 'user') return run(() => api(`/admin/tenants/${id}/users`, { body: form }), 'تم إنشاء الحساب').then(done);
     if (m === 'reset') return run(() => api(`/admin/users/${form.id}`, { method: 'PATCH', body: { password: form.password } }), 'تم تغيير كلمة المرور').then(done);
@@ -66,22 +65,37 @@ export default function TenantDetail() {
         </section>
 
         <section className="card p-5 lg:col-span-2">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-bold">الاشتراك</h2>
             <div className="flex gap-2">
-              <button type="button" className="btn-ghost btn-sm" onClick={() => setModal({ type: 'extend', data: { months: 12 } })}>تمديد</button>
-              <button type="button" className="btn-ghost btn-sm" onClick={() => setModal({ type: 'sub', data: {
-                plan_id: s?.plan_id ?? '', starts_at: s?.starts_at ?? '', ends_at: s?.ends_at ?? '', max_vehicles: s?.max_vehicles ?? 200, auto_renew: s?.auto_renew ?? false, grace_days: s?.grace_days ?? 0,
-              } })}>تعديل</button>
+              <button type="button" className="btn-primary btn-sm" onClick={() => setModal({ type: 'extend', data: { months: 1 } })}><Icon name="plus" className="size-4" />إضافة مدة</button>
+              {s && <button type="button" className="btn-ghost btn-sm" onClick={() => setModal({ type: 'sub', data: { ends_at: s.ends_at, max_vehicles: s.max_vehicles ?? '', grace_days: s.grace_days ?? 0 } })}>تعديل</button>}
+              {s && <button type="button" className="btn-ghost btn-sm text-rose-600" onClick={() => window.confirm('إلغاء الاشتراك؟ ستتوقف البوابات عن الفتح التلقائي فوراً.') && run(() => api(`/admin/tenants/${id}/subscription`, { method: 'DELETE' }), 'تم إلغاء الاشتراك').then(load)}>إلغاء</button>}
             </div>
           </div>
-          {!s ? <Empty>لا يوجد اشتراك</Empty> : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Info label="الحالة"><Badge tone={s.can_access ? 'green' : 'red'}>{s.can_access ? 'فعال' : 'منتهٍ'}</Badge></Info>
-              <Info label="الفترة">{fmtDate(s.starts_at)}<br />← {fmtDate(s.ends_at)}</Info>
-              <Info label="المتبقي">{s.days_left >= 0 ? `${s.days_left} يوم` : `منتهٍ منذ ${-s.days_left} يوم`}</Info>
-              <Info label="الحد الأقصى">{s.max_vehicles} سيارة<br /><span className="text-xs text-slate-500">{s.auto_renew ? 'تجديد تلقائي' : 'تجديد يدوي'}{s.plan_name ? ` · ${s.plan_name}` : ''}</span></Info>
+          {!s ? (
+            <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+              لا يوجد اشتراك بعد. سيُضاف تلقائياً عند الدفع في متجر سلة، أو اضغط «إضافة مدة».
             </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <div className={`text-3xl font-bold tabular-nums ${s.days_left < 0 ? 'text-rose-600' : s.days_left <= 7 ? 'text-amber-600' : 'text-brand-600 dark:text-brand-500'}`}>
+                    {s.days_left < 0 ? 0 : s.days_left}<span className="ms-1 text-base font-semibold">يوم</span>
+                  </div>
+                  <div className="text-sm text-slate-500">{daysLeftText(s.days_left)}</div>
+                </div>
+                <Badge tone={s.can_access ? 'green' : 'red'}>{s.can_access ? 'فعال' : 'منتهٍ'}</Badge>
+              </div>
+              <DaysBar sub={s} />
+              <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <Info label="من">{fmtDate(s.starts_at)}</Info>
+                <Info label="إلى">{fmtDate(s.ends_at)}</Info>
+                <Info label="آخر مدة">{durationLabel(s.duration_months)}</Info>
+                <Info label="الحد الأقصى للسيارات">{s.max_vehicles ?? 'بدون حد'}</Info>
+              </div>
+            </>
           )}
         </section>
       </div>
@@ -167,7 +181,7 @@ export default function TenantDetail() {
         </section>
       </div>
 
-      <Modal open={!!modal} onClose={close} title={{ info: 'تعديل بيانات المجمع', sub: 'تعديل الاشتراك', extend: 'تمديد الاشتراك', gate: form?.id ? 'تعديل البوابة' : 'بوابة جديدة', user: 'حساب دخول جديد', reset: 'تعيين كلمة مرور جديدة' }[modal?.type]}>
+      <Modal open={!!modal} onClose={close} title={{ info: 'تعديل بيانات المجمع', sub: 'تعديل الاشتراك', extend: 'إضافة مدة للاشتراك', gate: form?.id ? 'تعديل البوابة' : 'بوابة جديدة', user: 'حساب دخول جديد', reset: 'تعيين كلمة مرور جديدة' }[modal?.type]}>
         {form && (
           <form onSubmit={submit} className="grid gap-3">
             {modal.type === 'info' && <>
@@ -180,16 +194,21 @@ export default function TenantDetail() {
               <Field label="ملاحظات"><textarea className="input" rows="2" value={form.notes ?? ''} onChange={setF('notes')} /></Field>
             </>}
             {modal.type === 'sub' && <>
-              <Field label="الباقة"><select className="input" value={form.plan_id ?? ''} onChange={setF('plan_id')}><option value="">بدون</option>{plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="البداية"><input className="input" type="date" required value={form.starts_at} onChange={setF('starts_at')} /></Field>
-                <Field label="النهاية"><input className="input" type="date" required value={form.ends_at} onChange={setF('ends_at')} /></Field>
-                <Field label="الحد الأقصى للسيارات"><input className="input" type="number" min="1" value={form.max_vehicles} onChange={setF('max_vehicles')} /></Field>
-                <Field label="أيام سماح بعد الانتهاء"><input className="input" type="number" min="0" value={form.grace_days} onChange={setF('grace_days')} /></Field>
-              </div>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="size-4 accent-brand-600" checked={!!form.auto_renew} onChange={setF('auto_renew')} />تجديد تلقائي فور الدفع عبر سلة</label>
+              <Field label="تاريخ الانتهاء"><input className="input" type="date" required value={form.ends_at} onChange={setF('ends_at')} /></Field>
+              <Field label="الحد الأقصى للسيارات (اتركه فارغاً = بدون حد)"><input className="input" type="number" min="1" value={form.max_vehicles} onChange={setF('max_vehicles')} /></Field>
+              <Field label="أيام سماح بعد الانتهاء"><input className="input" type="number" min="0" value={form.grace_days} onChange={setF('grace_days')} /></Field>
             </>}
-            {modal.type === 'extend' && <Field label="عدد الأشهر"><input className="input" type="number" min="1" max="60" required value={form.months} onChange={setF('months')} /></Field>}
+            {modal.type === 'extend' && <>
+              <p className="text-sm text-slate-600 dark:text-slate-300">تُضاف المدة إلى نهاية الاشتراك الحالي، أو تبدأ من اليوم إن كان منتهياً.</p>
+              <div className="grid grid-cols-2 gap-2">
+                {DURATIONS.map(([m, label]) => (
+                  <button key={m} type="button" onClick={() => setModal({ ...modal, data: { months: m } })}
+                    className={`rounded-xl border-2 p-3 text-center font-bold transition ${Number(form.months) === m ? 'border-brand-500 bg-brand-50 text-brand-600 dark:bg-ink-800 dark:text-brand-500' : 'border-slate-200 dark:border-ink-700'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>}
             {modal.type === 'gate' && <>
               <Field label="اسم البوابة"><input className="input" required value={form.name} onChange={setF('name')} placeholder="البوابة الرئيسية" /></Field>
               <Field label="رمز البوابة {gate_id} (إنجليزي، فريد)"><input className="input" dir="ltr" required pattern="[A-Za-z0-9_\-]{2,40}" value={form.code} onChange={setF('code')} placeholder="yasmin-main" /></Field>
@@ -211,6 +230,18 @@ export default function TenantDetail() {
         )}
       </Modal>
     </>
+  );
+}
+
+// شريط يوضح المستهلك والمتبقي من مدة الاشتراك
+function DaysBar({ sub }) {
+  const total = Math.max(1, Math.round((new Date(sub.ends_at) - new Date(sub.starts_at)) / 864e5));
+  const left = Math.max(0, Math.min(total, sub.days_left));
+  const pct = (left / total) * 100;
+  return (
+    <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-ink-800">
+      <div className={`h-full rounded-full ${sub.days_left <= 7 ? 'bg-amber-500' : 'bg-brand-500'}`} style={{ width: `${pct}%` }} />
+    </div>
   );
 }
 

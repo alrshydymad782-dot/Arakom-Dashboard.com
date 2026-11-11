@@ -30,8 +30,9 @@ router.get('/overview', h(async () => {
     logs.todayStats(null),
     logs.hourly(null),
     many('SELECT * FROM mqtt_events ORDER BY id DESC LIMIT 15'),
-    many(`SELECT t.id, t.name, s.ends_at, (s.ends_at - CURRENT_DATE) AS days_left FROM subscriptions s JOIN tenants t ON t.id = s.tenant_id
-      WHERE s.ends_at BETWEEN CURRENT_DATE - 30 AND CURRENT_DATE + 14 ORDER BY s.ends_at LIMIT 10`),
+    many(`SELECT t.id, t.name, s.ends_at, (s.ends_at - CURRENT_DATE) AS days_left FROM tenants t LEFT JOIN subscriptions s ON s.tenant_id = t.id
+      WHERE t.status = 'active' AND (s.id IS NULL OR s.ends_at BETWEEN CURRENT_DATE - 30 AND CURRENT_DATE + 14)
+      ORDER BY s.ends_at NULLS FIRST LIMIT 10`),
   ]);
   return { counts, today, hours, mqtt: mq.state, events, expiring };
 }));
@@ -39,7 +40,8 @@ router.get('/overview', h(async () => {
 // ---------- المجمعات / العملاء ----------
 const TENANT_FIELDS = ['name', 'contact_name', 'phone', 'email', 'city', 'country', 'address', 'notes', 'status', 'salla_customer_id'];
 
-router.get('/tenants', h(() => many(`SELECT t.*, s.ends_at, s.starts_at, s.max_vehicles, s.auto_renew, st.can_access,
+router.get('/tenants', h(() => many(`SELECT t.*, s.ends_at, s.starts_at, s.max_vehicles, s.duration_months,
+    (s.ends_at - CURRENT_DATE) AS days_left, st.can_access,
     (SELECT COUNT(*) FROM gates g WHERE g.tenant_id = t.id)::int AS gates,
     (SELECT COUNT(*) FROM vehicles v WHERE v.tenant_id = t.id)::int AS vehicles,
     (SELECT COUNT(*) FROM cameras c JOIN gates g ON g.id = c.gate_id WHERE g.tenant_id = t.id AND c.is_online)::int AS cameras_online,
@@ -62,7 +64,7 @@ router.get('/tenants/:id', h(async (req) => {
   return { tenant, subscription, gates, users, payments, vehicles: vcount.n };
 }));
 
-// إنشاء مجمع مع اشتراكه وحساب مديره دفعة واحدة
+// إنشاء مجمع مع حساب مديره. الاشتراك لا يُنشأ هنا: يأتي من الدفع في سلة أو يضيفه المدير يدوياً
 router.post('/tenants', h(async (req) => {
   const b = req.body || {};
   if (!b.name) fail(400, 'اسم المجمع مطلوب');
@@ -70,10 +72,6 @@ router.post('/tenants', h(async (req) => {
   const result = await tx(async (c) => {
     const cols = Object.keys(f);
     const t = (await c.query(`INSERT INTO tenants (${cols.join(',')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(',')}) RETURNING *`, Object.values(f))).rows[0];
-    const s = b.subscription || {};
-    await c.query(`INSERT INTO subscriptions (tenant_id, plan_id, starts_at, ends_at, max_vehicles, auto_renew)
-      VALUES ($1, $2, COALESCE($3::date, CURRENT_DATE), COALESCE($4::date, (CURRENT_DATE + interval '1 year')::date), COALESCE($5, 200), COALESCE($6, false))`,
-    [t.id, s.plan_id || null, s.starts_at || null, s.ends_at || null, s.max_vehicles || null, s.auto_renew ?? null]);
     if (b.admin_username) {
       const username = String(b.admin_username).trim().toLowerCase();
       if (!/^[a-z0-9._@-]{3,40}$/.test(username)) fail(400, 'اسم المستخدم: حروف إنجليزية وأرقام فقط');
@@ -105,25 +103,31 @@ router.delete('/tenants/:id', h(async (req) => {
 }));
 
 // ---------- الاشتراكات ----------
-router.put('/tenants/:id/subscription', h(async (req) => {
-  const id = intParam(req.params.id);
-  const b = req.body || {};
-  if (!b.ends_at) fail(400, 'تاريخ نهاية الاشتراك مطلوب');
-  const s = await one(`INSERT INTO subscriptions (tenant_id, plan_id, starts_at, ends_at, max_vehicles, auto_renew, grace_days)
-    VALUES ($1, $2, COALESCE($3::date, CURRENT_DATE), $4::date, COALESCE($5, 200), COALESCE($6, false), COALESCE($7, 0))
-    ON CONFLICT (tenant_id) DO UPDATE SET plan_id = EXCLUDED.plan_id, starts_at = EXCLUDED.starts_at, ends_at = EXCLUDED.ends_at,
-      max_vehicles = EXCLUDED.max_vehicles, auto_renew = EXCLUDED.auto_renew, grace_days = EXCLUDED.grace_days, updated_at = now()
-    RETURNING *`, [id, b.plan_id || null, b.starts_at || null, b.ends_at, intParam(b.max_vehicles), b.auto_renew ?? null, intParam(b.grace_days)]);
-  await audit(req.user, 'subscription_update', b, id);
-  return s;
-}));
-
+// إضافة مدة يدوياً (شهر / 3 / 6 / سنة) — مثلاً عند الدفع خارج سلة
 router.post('/tenants/:id/subscription/extend', h(async (req) => {
   const months = intParam(req.body?.months);
-  if (!months || months < 1 || months > 60) fail(400, 'عدد الأشهر غير صحيح');
   const s = await tx((c) => subs.extend(c, intParam(req.params.id), months));
   await audit(req.user, 'subscription_extend', { months }, intParam(req.params.id));
   return s;
+}));
+
+// تعديل يدوي: تاريخ الانتهاء، الحد الأقصى للسيارات (فارغ = بدون حد)، أيام السماح
+router.patch('/tenants/:id/subscription', h(async (req) => {
+  const id = intParam(req.params.id);
+  const f = pickFields(req.body, ['ends_at', 'max_vehicles', 'grace_days']);
+  if (f.ends_at === null) fail(400, 'تاريخ الانتهاء مطلوب');
+  const q = updateSql('subscriptions', { ...f, updated_at: new Date() }, 'tenant_id = $1', [id]);
+  const s = await one(q.text, q.values);
+  if (!s) fail(404, 'لا يوجد اشتراك لهذا المجمع. أضف مدة أولاً');
+  await audit(req.user, 'subscription_update', f, id);
+  return s;
+}));
+
+// إلغاء الاشتراك (يوقف الفتح التلقائي فوراً)
+router.delete('/tenants/:id/subscription', h(async (req) => {
+  await query('DELETE FROM subscriptions WHERE tenant_id = $1', [intParam(req.params.id)]);
+  await audit(req.user, 'subscription_delete', {}, intParam(req.params.id));
+  return { ok: true };
 }));
 
 // ---------- البوابات ----------
@@ -258,27 +262,16 @@ router.delete('/users/:id', h(async (req) => {
   return { ok: true };
 }));
 
-// ---------- الباقات ----------
-router.get('/plans', h(() => many('SELECT * FROM plans ORDER BY id')));
-router.post('/plans', h(async (req) => {
-  const f = pickFields(req.body, ['name', 'salla_sku', 'duration_months', 'max_vehicles', 'max_gates', 'price', 'active']);
-  if (!f.name) fail(400, 'اسم الباقة مطلوب');
-  const cols = Object.keys(f);
-  return one(`INSERT INTO plans (${cols.join(',')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(',')}) RETURNING *`, Object.values(f));
-}));
-router.patch('/plans/:id', h(async (req) => {
-  const q = updateSql('plans', pickFields(req.body, ['name', 'salla_sku', 'duration_months', 'max_vehicles', 'max_gates', 'price', 'active']), 'id = $1', [intParam(req.params.id)]);
-  if (!q) fail(400, 'لا توجد تعديلات');
-  return one(q.text, q.values);
-}));
-router.delete('/plans/:id', h(async (req) => {
-  await query('DELETE FROM plans WHERE id = $1', [intParam(req.params.id)]);
-  return { ok: true };
+// ---------- سيارات مجمع (للاطلاع والدعم) ----------
+router.get('/tenants/:id/vehicles', h((req) => require('../services/vehicles').list(intParam(req.params.id), req.query)));
+router.get('/vehicles/:id/document', h(async (req, res) => {
+  const v = await one('SELECT document_path, document_type, document_name FROM vehicles WHERE id = $1', [intParam(req.params.id)]);
+  await require('../services/documents').send(res, v);
 }));
 
 // ---------- مدفوعات سلة ----------
 router.get('/payments', h(() => many(`SELECT p.id, p.tenant_id, p.event, p.order_id, p.reference_id, p.amount, p.currency, p.customer_name,
-    p.customer_phone, p.customer_email, p.sku, p.status, p.months_added, p.created_at, t.name AS tenant_name
+    p.customer_phone, p.customer_email, p.sku, p.product_name, p.status, p.months_added, p.created_at, t.name AS tenant_name
   FROM payments p LEFT JOIN tenants t ON t.id = p.tenant_id ORDER BY p.id DESC LIMIT 300`)));
 
 // تطبيق دفعة معلقة يدوياً على مجمع (عند عدم التعرف التلقائي أو التجديد اليدوي)

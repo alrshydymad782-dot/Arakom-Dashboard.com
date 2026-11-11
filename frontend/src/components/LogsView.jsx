@@ -160,9 +160,9 @@ function PrintReport({ report, withTenant }) {
   const opened = report.rows.filter((r) => r.decision === 'opened').length;
   return (
     <div dir="rtl" style={{ fontFamily: 'IBM Plex Sans Arabic, Tahoma, sans-serif', fontSize: 11 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #0b7a5a', paddingBottom: 8, marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #24bfb9', paddingBottom: 8, marginBottom: 10 }}>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>تقرير حركة البوابات — أراكم</div>
+          <img src="/logo.png" alt="" style={{ height: 46, marginBottom: 4 }} /><div style={{ fontSize: 18, fontWeight: 700, color: '#0c365e' }}>تقرير حركة البوابات</div>
           <div>{report.tenant_name || 'كل المجمعات'}</div>
         </div>
         <div style={{ textAlign: 'left' }}>
@@ -172,7 +172,7 @@ function PrintReport({ report, withTenant }) {
         </div>
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead><tr style={{ background: '#e8f7f1' }}>
+        <thead><tr style={{ background: '#e7f8f7', color: '#0c365e' }}>
           {['الوقت', ...(withTenant ? ['المجمع'] : []), 'البوابة', 'الاتجاه', 'اللوحة', 'اللوحة بالعربي', 'صاحب السيارة', 'الوحدة', 'الحالة', 'السبب'].map((h) => (
             <th key={h} style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: 'right' }}>{h}</th>
           ))}

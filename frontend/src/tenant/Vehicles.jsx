@@ -4,7 +4,37 @@ import { api, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { plateKey } from '../lib/plates';
 import { fmtDate, timeAgo } from '../lib/format';
-import { Badge, Empty, Field, Icon, Modal, PageHeader, Plate, Spinner, Tabs, useAction } from '../components/ui';
+import { Badge, Empty, Field, Icon, Modal, PageHeader, Plate, Spinner, Tabs, useAction, useToast } from '../components/ui';
+
+const DOC_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+const MAX_DOC = 5 * 1024 * 1024;
+const docUrl = (v) => `/api/tenant/vehicles/${v.id}/document?t=${encodeURIComponent(v.document_uploaded_at || '')}`;
+
+async function uploadDocument(vehicleId, file) {
+  const res = await fetch(`/api/tenant/vehicles/${vehicleId}/document`, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) },
+    body: file,
+    credentials: 'same-origin',
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.error || 'تعذر رفع الملف');
+  return data;
+}
+
+// أيقونة المستند في القائمة: صورة مصغرة أو شارة PDF
+function DocBadge({ v }) {
+  if (!v.document_path) return <span className="text-xs text-slate-400">—</span>;
+  return (
+    <a href={docUrl(v)} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title={v.document_name}
+      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-0.5 pe-2 text-xs font-semibold hover:border-brand-500 dark:border-ink-700 dark:bg-ink-800">
+      {v.document_type === 'application/pdf'
+        ? <span className="flex h-8 w-8 items-center justify-center rounded-md bg-rose-50 text-[10px] font-bold text-rose-600 dark:bg-rose-500/15">PDF</span>
+        : <img src={docUrl(v)} alt="" className="h-8 w-8 rounded-md object-cover" loading="lazy" />}
+      عرض
+    </a>
+  );
+}
 
 const BLANK = { plate: '', owner_name: '', unit_number: '', phone: '', car_make: '', car_color: '', status: 'active', valid_until: '', notes: '' };
 
@@ -59,17 +89,40 @@ export default function Vehicles() {
   const [status, setStatus] = useState('');
   const [edit, setEdit] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [file, setFile] = useState(null);
+  const filePreview = useMemo(() => (file && file.type !== 'application/pdf' ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => { if (filePreview) URL.revokeObjectURL(filePreview); }, [filePreview]);
   const [run, busy] = useAction();
+  const toast = useToast();
 
   const load = useCallback(() => api(`/tenant/vehicles${qs({ q, status })}`).then(setData), [q, status]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
   const save = async (e) => {
     e.preventDefault();
-    const body = { ...edit };
-    const ok = await run(() => (edit.id ? api(`/tenant/vehicles/${edit.id}`, { method: 'PATCH', body }) : api('/tenant/vehicles', { body })), 'تم الحفظ');
-    if (ok) { setEdit(null); load(); }
+    const { document_path: _p, document_type: _t, document_name: _n, document_size: _s, document_uploaded_at: _u, last_seen_at: _l, ...body } = edit;
+    const ok = await run(async () => {
+      const v = edit.id ? await api(`/tenant/vehicles/${edit.id}`, { method: 'PATCH', body }) : await api('/tenant/vehicles', { body });
+      if (file) await uploadDocument(v.id, file);
+      return v;
+    }, file ? 'تم الحفظ ورفع المستند' : 'تم الحفظ');
+    if (ok) { setEdit(null); setFile(null); load(); }
   };
+  const pickFile = (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    if (!DOC_TYPES.includes(f.type)) return toast('الملف يجب أن يكون صورة (JPG / PNG / WEBP) أو PDF', 'err');
+    if (f.size > MAX_DOC) return toast('حجم الملف أكبر من 5 ميجابايت', 'err');
+    setFile(f);
+  };
+  const removeDoc = async () => {
+    if (!window.confirm('حذف المستند المرفق؟')) return;
+    if (await run(() => api(`/tenant/vehicles/${edit.id}/document`, { method: 'DELETE' }), 'تم حذف المستند')) {
+      setEdit({ ...edit, document_path: null }); load();
+    }
+  };
+  const openEdit = (v) => { setFile(null); setEdit(v); };
   const remove = async () => {
     if (!window.confirm('حذف هذه السيارة من القائمة؟')) return;
     if (await run(() => api(`/tenant/vehicles/${edit.id}`, { method: 'DELETE' }), 'تم الحذف')) { setEdit(null); load(); }
@@ -82,10 +135,10 @@ export default function Vehicles() {
 
   return (
     <>
-      <PageHeader title="السيارات المسموح لها" subtitle={data ? `${data.rows.length} من ${data.max_vehicles} سيارة مسموحة في اشتراكك` : ''}
+      <PageHeader title="السيارات المسموح لها" subtitle={data ? (data.max_vehicles ? `${data.rows.length} من ${data.max_vehicles} سيارة مسموحة في اشتراكك` : `${data.rows.length} سيارة مسجلة`) : ''}
         actions={canEdit && <>
           <button type="button" className="btn-ghost" onClick={() => setImportOpen(true)}><Icon name="upload" className="size-4" />استيراد CSV / Excel</button>
-          <button type="button" className="btn-primary" onClick={() => setEdit({ ...BLANK })}><Icon name="plus" className="size-4" />إضافة سيارة</button>
+          <button type="button" className="btn-primary" onClick={() => openEdit({ ...BLANK })}><Icon name="plus" className="size-4" />إضافة سيارة</button>
         </>} />
 
       <div className="mb-4 flex flex-wrap gap-3">
@@ -103,7 +156,7 @@ export default function Vehicles() {
               <table className="w-full">
                 <thead className="bg-slate-50 dark:bg-ink-800/60"><tr>
                   <th className="th">اللوحة</th><th className="th">صاحب السيارة</th><th className="th">الوحدة</th><th className="th">التواصل</th>
-                  <th className="th">السيارة</th><th className="th">الحالة</th><th className="th">آخر حركة</th><th className="th" />
+                  <th className="th">السيارة</th><th className="th">المستند</th><th className="th">الحالة</th><th className="th">آخر حركة</th><th className="th" />
                 </tr></thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-ink-800">
                   {data.rows.map((v) => (
@@ -113,6 +166,7 @@ export default function Vehicles() {
                       <td className="td">{v.unit_number || '—'}</td>
                       <td className="td" dir="ltr">{v.phone || '—'}</td>
                       <td className="td">{[v.car_make, v.car_color].filter(Boolean).join(' · ') || '—'}</td>
+                      <td className="td"><DocBadge v={v} /></td>
                       <td className="td">
                         <Badge tone={v.status === 'active' ? 'green' : 'red'}>{v.status === 'active' ? 'نشط' : 'محظور'}</Badge>
                         {v.valid_until && <div className="mt-1 text-[11px] text-slate-500">حتى {fmtDate(v.valid_until)}</div>}
@@ -120,7 +174,7 @@ export default function Vehicles() {
                       <td className="td text-slate-500">{v.last_seen_at ? timeAgo(v.last_seen_at) : '—'}</td>
                       <td className="td">{canEdit && <div className="flex gap-1">
                         <button type="button" className="btn-ghost btn-sm" onClick={() => toggleBlock(v)}>{v.status === 'active' ? 'حظر' : 'تفعيل'}</button>
-                        <button type="button" className="btn-ghost btn-sm" onClick={() => setEdit({ ...BLANK, ...v, plate: v.plate_en || v.plate_key, valid_until: v.valid_until || '' })}><Icon name="edit" className="size-4" /></button>
+                        <button type="button" className="btn-ghost btn-sm" onClick={() => openEdit({ ...BLANK, ...v, plate: v.plate_en || v.plate_key, valid_until: v.valid_until || '' })}><Icon name="edit" className="size-4" /></button>
                       </div>}</td>
                     </tr>
                   ))}
@@ -129,12 +183,13 @@ export default function Vehicles() {
             </div>
             <ul className="divide-y divide-slate-100 md:hidden dark:divide-ink-800">
               {data.rows.map((v) => (
-                <li key={v.id} className="flex items-center gap-3 px-4 py-3" onClick={() => canEdit && setEdit({ ...BLANK, ...v, plate: v.plate_en || v.plate_key, valid_until: v.valid_until || '' })}>
+                <li key={v.id} className="flex items-center gap-3 px-4 py-3" onClick={() => canEdit && openEdit({ ...BLANK, ...v, plate: v.plate_en || v.plate_key, valid_until: v.valid_until || '' })}>
                   <Plate plateKey={v.plate_key} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-semibold">{v.owner_name || 'بدون اسم'}</div>
                     <div className="truncate text-xs text-slate-500">{[v.unit_number && `وحدة ${v.unit_number}`, v.car_make, v.car_color].filter(Boolean).join(' · ')}</div>
                   </div>
+                  {v.document_path && <DocBadge v={v} />}
                   <Badge tone={v.status === 'active' ? 'green' : 'red'}>{v.status === 'active' ? 'نشط' : 'محظور'}</Badge>
                 </li>
               ))}
@@ -162,6 +217,30 @@ export default function Vehicles() {
             </Field>
             <Field label="صالح حتى (اختياري)"><input className="input" type="date" value={edit.valid_until ?? ''} onChange={set('valid_until')} /></Field>
             <Field label="ملاحظات" className="col-span-2"><input className="input" value={edit.notes ?? ''} onChange={set('notes')} /></Field>
+            <div className="col-span-2">
+              <span className="label">صورة اللوحة أو الاستمارة (صورة أو PDF — حتى 5 ميجابايت)</span>
+              <div className="rounded-xl border-2 border-dashed border-slate-300 p-3 dark:border-ink-700">
+                {edit.document_path && !file && (
+                  <div className="mb-2 flex items-center gap-2 text-sm">
+                    <DocBadge v={edit} /><span className="min-w-0 flex-1 truncate text-slate-500">{edit.document_name}</span>
+                    <button type="button" className="btn-ghost btn-sm text-rose-600" onClick={removeDoc}><Icon name="trash" className="size-4" /></button>
+                  </div>
+                )}
+                {file && (
+                  <div className="mb-2 flex items-center gap-2 text-sm">
+                    {file.type === 'application/pdf'
+                      ? <span className="flex h-10 w-10 items-center justify-center rounded-md bg-rose-50 text-xs font-bold text-rose-600">PDF</span>
+                      : <img src={filePreview} alt="" className="h-10 w-10 rounded-md object-cover" />}
+                    <span className="min-w-0 flex-1 truncate">{file.name} <span className="text-slate-500">({(file.size / 1024).toFixed(0)} KB)</span></span>
+                    <button type="button" className="btn-ghost btn-sm" onClick={() => setFile(null)}><Icon name="x" className="size-4" /></button>
+                  </div>
+                )}
+                <label className="btn-ghost btn-sm cursor-pointer">
+                  <Icon name="upload" className="size-4" />{edit.document_path || file ? 'استبدال الملف' : 'اختيار صورة أو PDF'}
+                  <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={pickFile} />
+                </label>
+              </div>
+            </div>
             <div className="col-span-2 mt-2 flex gap-2">
               {edit.id && <button type="button" className="btn-ghost text-rose-600" onClick={remove}><Icon name="trash" className="size-4" />حذف</button>}
               <div className="flex-1" />

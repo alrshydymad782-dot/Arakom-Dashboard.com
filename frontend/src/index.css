@@ -5,15 +5,16 @@
 
 @theme {
   --font-sans: "IBM Plex Sans Arabic", system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif;
-  --color-brand-50: #e8f7f1;
-  --color-brand-100: #c6ebdc;
-  --color-brand-500: #14a37a;
-  --color-brand-600: #0b7a5a;
-  --color-brand-700: #0a6349;
-  --color-ink-950: #0b1220;
-  --color-ink-900: #111a2c;
-  --color-ink-800: #1a2539;
-  --color-ink-700: #26334b;
+  /* ألوان هوية أراكم من الشعار: كحلي #0C365E وفيروزي #24BFB9 */
+  --color-brand-50: #e7f8f7;
+  --color-brand-100: #c4efec;
+  --color-brand-500: #24bfb9;
+  --color-brand-600: #0c365e;
+  --color-brand-700: #082849;
+  --color-ink-950: #06182b;
+  --color-ink-900: #0b2239;
+  --color-ink-800: #12304d;
+  --color-ink-700: #1c3d5e;
 }
 
 @layer base {
@@ -35,7 +36,7 @@
   @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50;
 }
 @utility btn-primary {
-  @apply btn bg-brand-600 text-white hover:bg-brand-700;
+  @apply btn bg-brand-600 text-white hover:bg-brand-700 dark:bg-brand-500 dark:text-ink-950 dark:hover:bg-brand-100;
 }
 @utility btn-ghost {
   @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-ink-700 dark:bg-ink-800 dark:text-slate-200 dark:hover:bg-ink-700;

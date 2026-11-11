@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { fmtDate, timeAgo, randomPassword } from '../lib/format';
+import { fmtDate, timeAgo, randomPassword, daysLeftText, durationLabel } from '../lib/format';
 import { Badge, Empty, Field, Icon, Modal, PageHeader, Spinner, useAction } from '../components/ui';
 
 export default function Settings() {
   const { user } = useAuth();
   const isAdmin = user.role === 'tenant_admin';
-  const [sub, setSub] = useState(null);
+  const [sub, setSub] = useState(undefined);
   const [gates, setGates] = useState(null);
   const [users, setUsers] = useState(null);
   const [newUser, setNewUser] = useState(null);
@@ -40,15 +40,20 @@ export default function Settings() {
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="card p-5">
           <h2 className="mb-3 font-bold">الاشتراك</h2>
-          {!sub ? <Spinner /> : (
-            <dl className="grid grid-cols-2 gap-3 text-sm">
-              <dt className="text-slate-500">الحالة</dt><dd><Badge tone={sub.can_access ? 'green' : 'red'}>{sub.can_access ? 'فعال' : 'منتهٍ'}</Badge></dd>
-              <dt className="text-slate-500">الباقة</dt><dd>{sub.plan_name || '—'}</dd>
-              <dt className="text-slate-500">من</dt><dd>{fmtDate(sub.starts_at)}</dd>
-              <dt className="text-slate-500">إلى</dt><dd>{fmtDate(sub.ends_at)} {sub.can_access && <span className="text-slate-500">({sub.days_left} يوم)</span>}</dd>
-              <dt className="text-slate-500">الحد الأقصى للسيارات</dt><dd>{sub.max_vehicles}</dd>
-              <dt className="text-slate-500">التجديد</dt><dd>{sub.auto_renew ? 'تلقائي عند الدفع' : 'يدوي'}</dd>
-            </dl>
+          {sub === undefined ? <Spinner /> : !sub ? (
+            <p className="text-sm text-slate-500">لا يوجد اشتراك بعد. اشترك من متجر أراكم على سلة باستخدام نفس رقم الجوال المسجل لدينا، وسيُفعّل تلقائياً.</p>
+          ) : (
+            <>
+              <div className={`text-2xl font-bold ${sub.can_access ? 'text-brand-600 dark:text-brand-500' : 'text-rose-600'}`}>{daysLeftText(sub.days_left)}</div>
+              <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                <dt className="text-slate-500">الحالة</dt><dd><Badge tone={sub.can_access ? 'green' : 'red'}>{sub.can_access ? 'فعال' : 'منتهٍ'}</Badge></dd>
+                <dt className="text-slate-500">مدة آخر اشتراك</dt><dd>{durationLabel(sub.duration_months)}</dd>
+                <dt className="text-slate-500">من</dt><dd>{fmtDate(sub.starts_at)}</dd>
+                <dt className="text-slate-500">إلى</dt><dd>{fmtDate(sub.ends_at)}</dd>
+                {sub.max_vehicles && <><dt className="text-slate-500">الحد الأقصى للسيارات</dt><dd>{sub.max_vehicles}</dd></>}
+              </dl>
+              <p className="mt-3 text-xs text-slate-500">للتجديد: اشترك من متجر أراكم على سلة، وتُضاف المدة تلقائياً إلى الأيام المتبقية.</p>
+            </>
           )}
         </section>
 

@@ -16,18 +16,19 @@ function normalize(body) {
 }
 
 async function limits(client, tenantId) {
-  const r = await client.query(`SELECT s.max_vehicles, (SELECT COUNT(*)::int FROM vehicles WHERE tenant_id = $1) AS used
-    FROM subscriptions s WHERE s.tenant_id = $1`, [tenantId]);
-  return r.rows[0] || { max_vehicles: 0, used: 0 };
+  const r = await client.query('SELECT max_vehicles FROM subscriptions WHERE tenant_id = $1', [tenantId]);
+  const used = (await client.query('SELECT COUNT(*)::int AS n FROM vehicles WHERE tenant_id = $1', [tenantId])).rows[0].n;
+  // max = null يعني بدون حد (لم يُحدد حد في الاشتراك أو لا يوجد اشتراك بعد)
+  return { max_vehicles: r.rows[0]?.max_vehicles ?? null, used };
 }
 
 async function create(tenantId, body) {
   const v = normalize(body);
   return tx(async (c) => {
     // قفل صف الاشتراك لتجنب تجاوز الحد عند الإضافة المتزامنة
-    await c.query('SELECT 1 FROM subscriptions WHERE tenant_id = $1 FOR UPDATE', [tenantId]);
+    await c.query('SELECT 1 FROM tenants WHERE id = $1 FOR UPDATE', [tenantId]);
     const lim = await limits(c, tenantId);
-    if (lim.used >= lim.max_vehicles) fail(409, `وصلت للحد الأقصى من السيارات في اشتراكك (${lim.max_vehicles})`);
+    if (lim.max_vehicles != null && lim.used >= lim.max_vehicles) fail(409, `وصلت للحد الأقصى من السيارات في اشتراكك (${lim.max_vehicles})`);
     const cols = ['tenant_id', ...Object.keys(v)];
     const vals = [tenantId, ...Object.values(v)];
     const r = await c.query(`INSERT INTO vehicles (${cols.join(',')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(',')}) RETURNING *`, vals);
@@ -54,13 +55,13 @@ async function importRows(tenantId, rows) {
   let created = 0;
   let updated = 0;
   await tx(async (c) => {
-    await c.query('SELECT 1 FROM subscriptions WHERE tenant_id = $1 FOR UPDATE', [tenantId]);
+    await c.query('SELECT 1 FROM tenants WHERE id = $1 FOR UPDATE', [tenantId]);
     let { used, max_vehicles: max } = await limits(c, tenantId);
     for (const [i, raw] of rows.entries()) {
       let v;
       try { v = normalize(raw); } catch (e) { errors.push({ row: i + 2, error: e.message }); continue; }
       const exists = (await c.query('SELECT id FROM vehicles WHERE tenant_id = $1 AND plate_key = $2', [tenantId, v.plate_key])).rows[0];
-      if (!exists && used >= max) { errors.push({ row: i + 2, error: `تجاوز الحد الأقصى (${max})` }); continue; }
+      if (!exists && max != null && used >= max) { errors.push({ row: i + 2, error: `تجاوز الحد الأقصى (${max})` }); continue; }
       const cols = ['tenant_id', ...Object.keys(v)];
       const vals = [tenantId, ...Object.values(v)];
       const set = Object.keys(v).filter((k) => k !== 'plate_key').map((k) => `${k} = EXCLUDED.${k}`).join(', ');

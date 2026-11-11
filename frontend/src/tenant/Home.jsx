@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useLive } from '../lib/realtime';
-import { fmtDate, timeAgo } from '../lib/format';
+import { fmtDate, timeAgo, daysLeftText, durationLabel } from '../lib/format';
 import { Icon, OnlineDot, PageHeader, StatCard, Spinner, Empty, useAction, Modal } from '../components/ui';
 import { LogItem, ImageViewer } from '../components/LogsView';
 import HourlyChart from '../components/HourlyChart';
@@ -41,7 +41,7 @@ export default function Home() {
 
   if (!d) return <Spinner />;
   const sub = d.subscription;
-  const expired = sub && !sub.can_access;
+  const expired = !sub || !sub.can_access;
 
   const open = (gate, direction) => run(() => api(`/tenant/gates/${gate.id}/open`, { body: { direction } }), `تم إرسال أمر فتح ${direction === 'in' ? 'بوابة الدخول' : 'بوابة الخروج'}`)
     .then(() => setConfirm(null));
@@ -50,14 +50,16 @@ export default function Home() {
     <>
       <PageHeader title={`أهلاً، ${d.tenant_name}`} subtitle="حركة البوابات لحظة بلحظة" />
 
-      {expired && (
+      {expired ? (
         <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
-          <b>انتهى الاشتراك في {fmtDate(sub.ends_at)}.</b> البوابات لا تُفتح تلقائياً للسيارات حتى يتم التجديد. تواصل مع إدارة أراكم أو جدد من المتجر.
+          <b>{sub ? `انتهى الاشتراك في ${fmtDate(sub.ends_at)}.` : 'لا يوجد اشتراك فعال.'}</b> البوابات لا تُفتح تلقائياً حتى يتم الاشتراك أو التجديد من متجر أراكم.
         </div>
-      )}
-      {!expired && sub?.days_left <= 14 && (
-        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-          ينتهي الاشتراك بعد {sub.days_left} يوم ({fmtDate(sub.ends_at)}).
+      ) : (
+        <div className={`mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl border p-4 text-sm ${sub.days_left <= 7
+          ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'
+          : 'border-brand-100 bg-brand-50 text-brand-700 dark:border-ink-700 dark:bg-ink-900 dark:text-brand-100'}`}>
+          <b className="text-base">{daysLeftText(sub.days_left)}</b>
+          <span>الاشتراك ({durationLabel(sub.duration_months)}) ساري حتى {fmtDate(sub.ends_at)}</span>
         </div>
       )}
 
@@ -65,7 +67,7 @@ export default function Home() {
         <StatCard icon="in" label="دخول اليوم" value={d.today.entries} />
         <StatCard icon="out" label="خروج اليوم" value={d.today.exits} tone="blue" />
         <StatCard icon="x" label="محاولات مرفوضة" value={d.today.denied} tone="red" />
-        <StatCard icon="car" label="السيارات المسجلة" value={`${d.vehicles} / ${sub?.max_vehicles ?? '—'}`} tone="amber" />
+        <StatCard icon="car" label="السيارات المسجلة" value={sub?.max_vehicles ? `${d.vehicles} / ${sub.max_vehicles}` : d.vehicles} tone="amber" />
       </div>
 
       <h2 className="mb-3 mt-7 text-lg font-bold">البوابات</h2>

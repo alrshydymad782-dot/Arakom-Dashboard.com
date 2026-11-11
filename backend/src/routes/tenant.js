@@ -8,6 +8,7 @@ const logs = require('../services/logs');
 const subs = require('../services/subscriptions');
 const access = require('../services/access');
 const { hashPassword } = require('../services/passwords');
+const documents = require('../services/documents');
 
 const router = express.Router();
 router.use(requireRole('tenant_admin', 'tenant_guard'));
@@ -75,11 +76,31 @@ router.patch('/vehicles/:id', adminOnly, h(async (req) => {
   return v;
 }));
 router.delete('/vehicles/:id', adminOnly, h(async (req) => {
-  const v = await one('DELETE FROM vehicles WHERE id = $1 AND tenant_id = $2 RETURNING plate_key', [intParam(req.params.id), tid(req)]);
+  const v = await one('DELETE FROM vehicles WHERE id = $1 AND tenant_id = $2 RETURNING plate_key, document_path', [intParam(req.params.id), tid(req)]);
   if (!v) fail(404, 'السيارة غير موجودة');
+  documents.removeFile(v.document_path);
   await audit(req.user, 'vehicle_delete', { plate: v.plate_key });
   return { ok: true };
 }));
+// مستند لوحة السيارة (صورة أو PDF): يُرسل الملف خاماً، واسمه في الترويسة X-File-Name
+router.put('/vehicles/:id/document', adminOnly,
+  express.raw({ type: () => true, limit: documents.MAX_BYTES + 1024 }),
+  h(async (req) => {
+    let name = req.get('x-file-name') || '';
+    try { name = decodeURIComponent(name); } catch { /* تجاهل */ }
+    const v = await documents.save(tid(req), intParam(req.params.id), req.body, name);
+    await audit(req.user, 'vehicle_document_upload', { plate: v.plate_key, type: v.document_type });
+    return v;
+  }));
+router.get('/vehicles/:id/document', h(async (req, res) => {
+  const v = await one('SELECT document_path, document_type, document_name FROM vehicles WHERE id = $1 AND tenant_id = $2', [intParam(req.params.id), tid(req)]);
+  await documents.send(res, v);
+}));
+router.delete('/vehicles/:id/document', adminOnly, h(async (req) => {
+  await documents.remove(tid(req), intParam(req.params.id));
+  return { ok: true };
+}));
+
 // استيراد جماعي: الواجهة تقرأ ملف CSV/Excel وترسل الصفوف
 router.post('/vehicles/import', adminOnly, h(async (req) => {
   const r = await vehicles.importRows(tid(req), req.body?.rows);

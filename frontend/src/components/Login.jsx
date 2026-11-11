@@ -25,10 +25,9 @@ export default function Login({ portal }) {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-50 via-white to-slate-100 px-4 dark:from-ink-950 dark:via-ink-950 dark:to-ink-900">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-50 via-white to-brand-100/60 px-4 dark:from-ink-950 dark:via-ink-950 dark:to-ink-900">
       <form onSubmit={submit} className="card w-full max-w-sm p-6 sm:p-8">
-        <img src="/icon.svg" alt="" className="mx-auto mb-4 size-16 rounded-2xl" />
-        <h1 className="text-center text-2xl font-bold">أراكم</h1>
+        <div className="mx-auto mb-4 w-56 rounded-2xl bg-white p-3"><img src="/logo.png" alt="ARAKOM أراكم" className="w-full" /></div>
         <p className="mb-6 mt-1 text-center text-sm text-slate-500 dark:text-slate-400">
           {isAdmin ? 'لوحة الإدارة العليا' : 'بوابات المرور الذكية — لوحة المجمع'}
         </p>

@@ -46,6 +46,7 @@ function errorHandler(err, _req, res, _next) {
     return res.status(400).json({ error: 'قيمة غير صحيحة في أحد الحقول' });
   }
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'بيانات غير صالحة' });
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: 'حجم الملف أكبر من 5 ميجابايت' });
   if (err.status && err.status < 500) return res.status(err.status).json({ error: err.message });
   if (err.status === 503) return res.status(503).json({ error: err.message });
   console.error(err);

@@ -62,7 +62,7 @@ export function Plate({ plateKey, raw, size = 'md' }) {
         {[...letters].map((c, i) => <span key={`a${i}`} className={`${cell} border-b-2 border-slate-800`}>{EN_TO_AR[c]}</span>)}
         {[...letters].map((c, i) => <span key={`l${i}`} className={cell}>{c}</span>)}
       </span>
-      <span className={`flex items-center bg-emerald-50 px-0.5 font-bold text-brand-600 [writing-mode:vertical-rl] ${big ? 'text-[10px]' : 'text-[7px]'}`}>KSA</span>
+      <span className={`flex items-center bg-brand-50 px-0.5 font-bold text-brand-600 [writing-mode:vertical-rl] ${big ? 'text-[10px]' : 'text-[7px]'}`}>KSA</span>
     </span>
   );
 }

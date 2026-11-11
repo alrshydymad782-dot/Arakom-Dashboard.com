@@ -51,3 +51,18 @@ export const randomPassword = () => {
   crypto.getRandomValues(a);
   return Array.from(a, (n) => c[n % c.length]).join('');
 };
+
+// مدد الاشتراك المعتمدة
+export const DURATIONS = [[1, 'شهر'], [3, '3 أشهر'], [6, '6 أشهر'], [12, 'سنة']];
+export const durationLabel = (m) => DURATIONS.find(([k]) => k === Number(m))?.[1] || (m ? `${m} شهر` : '—');
+
+// نص الأيام المتبقية
+export function daysLeftText(days) {
+  if (days == null) return 'لا يوجد اشتراك';
+  if (days < 0) return `منتهٍ منذ ${-days} يوم`;
+  if (days === 0) return 'ينتهي اليوم';
+  if (days === 1) return 'يوم واحد متبقٍ';
+  if (days === 2) return 'يومان متبقيان';
+  if (days <= 10) return `${days} أيام متبقية`;
+  return `${days} يوماً متبقياً`;
+}
