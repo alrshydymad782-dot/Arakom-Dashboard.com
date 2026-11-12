@@ -48,8 +48,8 @@ const config = {
   },
 
   // الرابط العام للوحات العملاء (يُبنى منه رابط كل عميل: {appUrl}/c/{token})
-  appUrl: env('APP_URL', isProd ? 'https://app.arakom.sa' : 'http://localhost:4000'),
-  adminUrl: env('ADMIN_URL', isProd ? 'https://admin.arakom.sa' : 'http://localhost:4000/admin'),
+  appUrl: env('APP_URL', isProd ? `https://${env('APP_HOST', 'app.arakom.sa')}` : 'http://localhost:4000'),
+  adminUrl: env('ADMIN_URL', isProd ? `https://${env('ADMIN_HOST', 'admin.arakom.sa')}` : 'http://localhost:4000/admin'),
 
   seedAdmin: {
     username: env('ADMIN_USERNAME', 'admin'),

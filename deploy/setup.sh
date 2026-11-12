@@ -22,6 +22,8 @@ if [ ! -f .env ]; then
   sed -i \
     -e "s|^ADMIN_HOST=.*|ADMIN_HOST=$ADMIN_HOST|" \
     -e "s|^APP_HOST=.*|APP_HOST=$APP_HOST|" \
+    -e "s|^APP_URL=.*|APP_URL=https://$APP_HOST|" \
+    -e "s|^ADMIN_URL=.*|ADMIN_URL=https://$ADMIN_HOST|" \
     -e "s|^SESSION_SECRET=.*|SESSION_SECRET=$(rand 48)|" \
     -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(rand 24)|" \
     -e "s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=$ADMIN_PASSWORD|" \
