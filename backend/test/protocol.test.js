@@ -1,7 +1,6 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const crypto = require('node:crypto');
 const { newMsgId, build, serialFrom, gateCodeFrom, decode } = require('../src/mqtt/protocol');
 
 test('msg_id حسب البروتوكول: 20 خانة، أول 13 هي الوقت بالميلي ثانية', () => {
@@ -46,16 +45,4 @@ test('استخراج رمز البوابة من الموضوع', () => {
 
 test('رسالة غير JSON تُرفض بأمان', () => {
   assert.strictEqual(decode(Buffer.from('not json')), null);
-});
-
-test('توقيع ويب هوك سلة', () => {
-  process.env.SALLA_WEBHOOK_SECRET = 'test-secret';
-  delete require.cache[require.resolve('../src/config')];
-  delete require.cache[require.resolve('../src/routes/salla')];
-  const { verifySignature } = require('../src/routes/salla');
-  const body = Buffer.from('{"event":"order.created"}');
-  const sig = crypto.createHmac('sha256', 'test-secret').update(body).digest('hex');
-  assert.strictEqual(verifySignature(body, sig), true);
-  assert.strictEqual(verifySignature(body, 'bad'), false);
-  assert.strictEqual(verifySignature(body, undefined), false);
 });

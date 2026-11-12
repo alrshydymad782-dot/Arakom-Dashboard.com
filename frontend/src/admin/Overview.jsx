@@ -91,7 +91,7 @@ export default function Overview() {
 
       <PendingPlates />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard icon="building" label="المجمعات (النشطة / الكل)" value={`${c.active_tenants} / ${c.tenants}`} />
+        <StatCard icon="building" label="لوحات العملاء (مفتوحة / الكل)" value={`${c.active_tenants} / ${c.tenants}`} />
         <StatCard icon="gate" label="البوابات المسجلة" value={c.gates} tone="blue" hint={`${c.cameras} كاميرا`} />
         <StatCard icon="camera" label="الكاميرات المتصلة" value={`${c.cameras_online} / ${c.cameras}`} tone={c.cameras_online < c.cameras ? 'amber' : 'brand'}
           hint={c.cameras_unassigned ? `${c.cameras_unassigned} غير مرتبطة` : undefined} />
@@ -99,7 +99,7 @@ export default function Overview() {
         <StatCard icon="in" label="دخول اليوم" value={d.today.entries} />
         <StatCard icon="out" label="خروج اليوم" value={d.today.exits} tone="blue" />
         <StatCard icon="x" label="مرفوض اليوم" value={d.today.denied} tone="red" />
-        <StatCard icon="card" label="مدفوعات تحتاج مراجعة" value={c.payments_pending} tone={c.payments_pending ? 'red' : 'brand'} />
+        <StatCard icon="plus" label="سيارات بانتظار رقم اللوحة" value={c.pending_plates} tone={c.pending_plates ? 'amber' : 'brand'} />
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
@@ -108,13 +108,13 @@ export default function Overview() {
           <HourlyChart hours={d.hours} />
         </div>
         <div className="card p-4">
-          <h2 className="mb-3 font-bold">اشتراكات تنتهي قريباً</h2>
+          <h2 className="mb-3 font-bold">لوحات مقفلة أو تنتهي خلال 7 أيام</h2>
           {!d.expiring.length ? <Empty>لا يوجد</Empty> : (
             <ul className="divide-y divide-slate-100 dark:divide-ink-800">
               {d.expiring.map((t) => (
                 <li key={t.id} className="flex items-center justify-between py-2.5 text-sm">
                   <Link to={`/tenants/${t.id}`} className="font-medium hover:underline">{t.name}</Link>
-                  <Badge tone={t.days_left < 0 ? 'red' : 'amber'}>{t.days_left < 0 ? `انتهى ${fmtDate(t.ends_at)}` : `${t.days_left} يوم`}</Badge>
+                  <Badge tone={t.days_left == null || t.days_left < 0 ? 'red' : 'amber'}>{t.days_left == null ? 'بدون اشتراك' : t.days_left < 0 ? `مقفلة منذ ${fmtDate(t.ends_at)}` : `${t.days_left} يوم`}</Badge>
                 </li>
               ))}
             </ul>

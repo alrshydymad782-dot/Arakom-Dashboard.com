@@ -36,6 +36,7 @@ export default function Cameras() {
   useLive('camera:new', load);
   useLive('camera:status', useCallback((c) => setRows((p) => p?.map((r) => (r.id === c.id ? { ...r, ...c } : r))), []));
 
+  const gateColumns = (gid) => tenants.flatMap((t) => t.gates).find((g) => String(g.id) === String(gid))?.columns ?? 2;
   const save = async (e) => {
     e.preventDefault();
     const body = { gate_id: edit.gate_id || null, direction: edit.gate_id ? edit.direction : null, name: edit.name };
@@ -70,7 +71,7 @@ export default function Cameras() {
                 <div className="min-w-40">
                   {c.gate_id ? <>
                     <div className="text-sm font-semibold">{c.tenant_name}</div>
-                    <div className="text-xs text-slate-500">{c.gate_name} · <Badge tone={c.direction === 'in' ? 'blue' : 'gray'}>{c.direction === 'in' ? 'دخول' : 'خروج'}</Badge></div>
+                    <div className="text-xs text-slate-500">{c.gate_name} · <Badge tone={c.direction === 'in' ? 'blue' : 'gray'}>{c.direction === 'in' ? 'عمود الدخول' : 'عمود الخروج'}</Badge></div>
                   </> : <Badge tone="amber">غير مرتبطة</Badge>}
                 </div>
                 <OnlineDot online={c.is_online} />
@@ -92,18 +93,19 @@ export default function Cameras() {
           <form onSubmit={save} className="grid gap-3">
             {!edit.id && <Field label="الرقم التسلسلي (SN)"><input className="input font-mono" dir="ltr" required value={edit.sn} onChange={(e) => setEdit({ ...edit, sn: e.target.value })} /></Field>}
             <Field label="البوابة">
-              <select className="input" value={edit.gate_id} onChange={(e) => setEdit({ ...edit, gate_id: e.target.value })}>
+              <select className="input" value={edit.gate_id} onChange={(e) => setEdit({ ...edit, gate_id: e.target.value, direction: gateColumns(e.target.value) === 1 ? 'in' : edit.direction })}>
                 <option value="">— غير مرتبطة —</option>
                 {tenants.map((t) => (
                   <optgroup key={t.id} label={t.name}>
-                    {t.gates.map((g) => <option key={g.id} value={g.id}>{g.name} ({g.code})</option>)}
+                    {t.gates.map((g) => <option key={g.id} value={g.id}>{g.name} — {g.columns === 1 ? 'عمود واحد' : 'عمودان'}</option>)}
                   </optgroup>
                 ))}
               </select>
             </Field>
             {edit.gate_id && (
-              <Field label="نوع الكاميرا">
-                <Tabs value={edit.direction} onChange={(v) => setEdit({ ...edit, direction: v })} items={[['in', 'كاميرا دخول'], ['out', 'كاميرا خروج']]} />
+              <Field label="العمود">
+                <Tabs value={edit.direction} onChange={(v) => setEdit({ ...edit, direction: v })}
+                  items={gateColumns(edit.gate_id) === 1 ? [['in', 'عمود الدخول']] : [['in', 'عمود الدخول'], ['out', 'عمود الخروج']]} />
               </Field>
             )}
             <Field label="اسم وصفي (اختياري)"><input className="input" value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>

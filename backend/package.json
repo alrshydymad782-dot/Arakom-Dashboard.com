@@ -19,7 +19,6 @@
   "dependencies": {
     "express": "^5.1.0",
     "mqtt": "^5.16.1",
-    "nodemailer": "^10.5.0",
     "pg": "^8.23.1",
     "socket.io": "^4.8.4"
   },

@@ -1,6 +1,6 @@
 'use strict';
 // أدوات مساعدة لمسارات Express
-const { loadUser, readToken, parseCookies, COOKIE } = require('./services/auth');
+const { usersFromCookieHeader } = require('./services/auth');
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -20,10 +20,13 @@ const h = (fn) => async (req, res, next) => {
   }
 };
 
+// يقرأ جلسة الإدارة وجلسة العميل (كوكيان منفصلان)، ويحدد المستخدم حسب المسار
 async function attachUser(req, _res, next) {
   try {
-    const p = readToken(parseCookies(req.headers.cookie)[COOKIE]);
-    if (p) req.user = await loadUser(p.u);
+    const { admin, tenant } = await usersFromCookieHeader(req.headers.cookie);
+    req.adminUser = admin;
+    req.tenantUser = tenant;
+    req.user = req.path.startsWith('/api/tenant') ? tenant : admin;
     next();
   } catch (e) {
     next(e);
@@ -33,9 +36,6 @@ async function attachUser(req, _res, next) {
 const requireRole = (...roles) => (req, _res, next) => {
   if (!req.user) return next(new HttpError(401, 'يجب تسجيل الدخول'));
   if (!roles.includes(req.user.role)) return next(new HttpError(403, 'لا تملك صلاحية لهذه العملية'));
-  if (req.user.role !== 'super_admin' && req.user.tenant_status !== 'active') {
-    return next(new HttpError(403, 'حساب المجمع موقوف، تواصل مع إدارة أراكم'));
-  }
   next();
 };
 

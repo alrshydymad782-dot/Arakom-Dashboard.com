@@ -17,9 +17,6 @@ app.use((_req, res, next) => {
   next();
 });
 
-// الويب هوك يحتاج جسم الطلب الخام للتحقق من التوقيع، لذلك يُسجَّل قبل express.json
-app.use('/api/webhooks/salla', require('./routes/salla').router);
-
 app.use(express.json({ limit: '5mb' }));
 app.use(attachUser);
 
@@ -30,6 +27,8 @@ app.use('/api/tenant', require('./routes/tenant'));
 
 // صور اللوحات: الإدارة ترى الكل، والمجمع يرى صور سجلاته فقط
 app.get('/api/media/:day/:file', h(async (req, res) => {
+  // الإدارة ترى الكل، والعميل صور مجمعه فقط
+  req.user = req.adminUser || req.tenantUser;
   if (!req.user) fail(401, 'يجب تسجيل الدخول');
   const rel = `${req.params.day}/${req.params.file}`;
   const file = mediaPath(rel);

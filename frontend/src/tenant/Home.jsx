@@ -1,107 +1,74 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useLive } from '../lib/realtime';
-import { fmtDate, timeAgo, daysLeftText, durationLabel } from '../lib/format';
-import { Icon, OnlineDot, PageHeader, StatCard, Spinner, Empty, useAction, Modal } from '../components/ui';
+import { fmtDate, timeAgo, daysLeftText } from '../lib/format';
+import { Icon, OnlineDot, Spinner, Empty, useAction, Modal } from '../components/ui';
 import { LogItem, ImageViewer } from '../components/LogsView';
-import HourlyChart from '../components/HourlyChart';
 import OpenAllControl from '../components/OpenAllControl';
 
+const COLUMN_LABEL = { in: 'عمود الدخول', out: 'عمود الخروج' };
+
+// لوحة العميل المبسطة: البوابات (فتح يدوي + فتح تلقائي) وآخر الحركة
 export default function Home() {
+  const status = useOutletContext();
   const [d, setD] = useState(null);
   const [img, setImg] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [run, busy] = useAction();
 
-  const load = useCallback(() => api('/tenant/dashboard').then(setD), []);
+  const load = useCallback(() => api('/tenant/dashboard').then(setD).catch(() => {}), []);
   useEffect(() => { load(); }, [load]);
 
-  // حدث مباشر: عملية دخول/خروج جديدة
   useLive('access:new', useCallback((log) => {
-    setD((p) => {
-      if (!p) return p;
-      const t = { ...p.today, total: p.today.total + 1 };
-      if (log.decision === 'opened' && log.direction === 'in') t.entries++;
-      if (log.decision === 'opened' && log.direction === 'out') t.exits++;
-      if (log.decision === 'denied') t.denied++;
-      return { ...p, today: t, recent: [{ ...log, _new: true }, ...p.recent].slice(0, 20) };
-    });
+    setD((p) => p && { ...p, recent: [{ ...log, _new: true }, ...p.recent].slice(0, 8) });
   }, []));
   useLive('access:image', useCallback((row) => {
     setD((p) => p && { ...p, recent: p.recent.map((r) => (r.id === row.id ? { ...r, ...row } : r)) });
   }, []));
-  // حدث مباشر: تغير حالة اتصال كاميرا
   useLive('camera:status', useCallback((cam) => {
-    setD((p) => p && {
-      ...p,
-      gates: p.gates.map((g) => ({ ...g, cameras: g.cameras?.map((c) => (c.id === cam.id ? { ...c, ...cam } : c)) })),
-    });
+    setD((p) => p && { ...p, gates: p.gates.map((g) => ({ ...g, cameras: g.cameras?.map((c) => (c.id === cam.id ? { ...c, ...cam } : c)) })) });
   }, []));
-  useLive('subscription:renewed', load);
-  // تغيير وضع الفتح لأي سيارة (من جهاز آخر أو من الإدارة)
   const patchGate = useCallback((st) => {
     setD((p) => p && { ...p, gates: p.gates.map((g) => (g.id === (st.gate_id ?? st.id) ? { ...g, open_all_always: st.open_all_always, open_all_until: st.open_all_until } : g)) });
   }, []);
   useLive('gate:open_all', patchGate);
 
   if (!d) return <Spinner />;
-  const sub = d.subscription;
-  const expired = !sub || !sub.can_access;
 
-  const open = (gate, direction) => run(() => api(`/tenant/gates/${gate.id}/open`, { body: { direction } }), `تم إرسال أمر فتح ${direction === 'in' ? 'بوابة الدخول' : 'بوابة الخروج'}`)
+  const open = () => run(() => api(`/tenant/gates/${confirm.gate.id}/open`, { body: { direction: confirm.dir } }), `تم فتح ${COLUMN_LABEL[confirm.dir]}`)
     .then(() => setConfirm(null));
 
   return (
     <>
-      <PageHeader title={`أهلاً، ${d.tenant_name}`} subtitle="حركة البوابات لحظة بلحظة" />
-
-      {expired ? (
-        <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
-          <b>{sub ? `انتهى الاشتراك في ${fmtDate(sub.ends_at)}.` : 'لا يوجد اشتراك فعال.'}</b> البوابات لا تُفتح تلقائياً حتى يتم الاشتراك أو التجديد من متجر أراكم.
-        </div>
-      ) : (
-        <div className={`mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-2xl border p-4 text-sm ${sub.days_left <= 7
-          ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'
-          : 'border-brand-100 bg-brand-50 text-brand-700 dark:border-ink-700 dark:bg-ink-900 dark:text-brand-100'}`}>
-          <b className="text-base">{daysLeftText(sub.days_left)}</b>
-          <span>الاشتراك ({durationLabel(sub.duration_months)}) ساري حتى {fmtDate(sub.ends_at)}</span>
+      {status?.days_left != null && status.days_left <= 5 && (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          <b>{daysLeftText(status.days_left)}</b> — تُقفل لوحة التحكم بعد {fmtDate(status.ends_at)}. تواصل مع أراكم للتجديد.
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard icon="in" label="دخول اليوم" value={d.today.entries} />
-        <StatCard icon="out" label="خروج اليوم" value={d.today.exits} tone="blue" />
-        <StatCard icon="x" label="محاولات مرفوضة" value={d.today.denied} tone="red" />
-        <StatCard icon="car" label="السيارات المسجلة" value={sub?.max_vehicles ? `${d.vehicles} / ${sub.max_vehicles}` : d.vehicles} tone="amber" />
-      </div>
-
-      <h2 className="mb-3 mt-7 text-lg font-bold">البوابات</h2>
-      {!d.gates.length ? <div className="card"><Empty>لا توجد بوابات مرتبطة بحسابك بعد. تواصل مع إدارة أراكم.</Empty></div> : (
+      {!d.gates.length ? <div className="card"><Empty>لا توجد بوابات بعد. ستضيفها إدارة أراكم.</Empty></div> : (
         <div className="grid gap-4 md:grid-cols-2">
           {d.gates.map((g) => {
-            const cam = (dir) => g.cameras?.find((c) => c.direction === dir);
+            const dirs = g.columns === 1 ? ['in'] : ['in', 'out'];
             return (
-              <div key={g.id} className="card p-5">
-                <div className="mb-4 flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-base font-bold">{g.name}</div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400" dir="ltr">{g.code}</div>
-                  </div>
+              <div key={g.id} className="card p-4 sm:p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-bold">{g.name}</h2>
+                  <span className="text-xs text-slate-500">{g.columns === 1 ? 'عمود واحد' : 'عمودان'}</span>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {['in', 'out'].map((dir) => {
-                    const c = cam(dir);
+                <div className={`grid gap-3 ${dirs.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  {dirs.map((dir) => {
+                    const c = g.cameras?.find((x) => x.direction === dir);
                     return (
                       <div key={dir} className="rounded-xl border border-slate-200 p-3 dark:border-ink-700">
-                        <div className="mb-1 flex items-center justify-between">
-                          <span className="flex items-center gap-1 text-sm font-semibold"><Icon name={dir} className="size-4" />{dir === 'in' ? 'كاميرا الدخول' : 'كاميرا الخروج'}</span>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-1 text-sm font-semibold"><Icon name={dir} className="size-4" />{COLUMN_LABEL[dir]}</span>
+                          {c && <OnlineDot online={c.is_online} label={false} />}
                         </div>
-                        {c ? <><OnlineDot online={c.is_online} /><div className="mt-0.5 text-[11px] text-slate-500">{c.is_online ? 'آخر نبضة ' : 'آخر ظهور '}{timeAgo(c.last_seen_at)}</div></>
-                          : <div className="text-xs text-slate-400">غير مركبة</div>}
-                        <button type="button" disabled={!c} onClick={() => setConfirm({ gate: g, dir })}
-                          className="btn-primary mt-3 w-full py-3 text-base">
-                          <Icon name="gate" />فتح {dir === 'in' ? 'الدخول' : 'الخروج'}
+                        <div className="text-[11px] text-slate-500">{c ? (c.is_online ? 'الكاميرا متصلة' : `الكاميرا منقطعة · ${timeAgo(c.last_seen_at)}`) : 'لم تُركب الكاميرا بعد'}</div>
+                        <button type="button" onClick={() => setConfirm({ gate: g, dir })} className="btn-primary mt-3 w-full py-3.5 text-base">
+                          <Icon name="gate" />فتح
                         </button>
                       </div>
                     );
@@ -114,29 +81,24 @@ export default function Home() {
         </div>
       )}
 
-      <div className="mt-7 grid gap-4 lg:grid-cols-5">
-        <div className="card overflow-hidden lg:col-span-3">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-ink-700">
-            <h2 className="flex items-center gap-2 font-bold"><span className="relative flex size-2.5"><span className="absolute inset-0 animate-ping rounded-full bg-emerald-400 opacity-70" /><span className="relative size-2.5 rounded-full bg-emerald-500" /></span>الحركة المباشرة</h2>
-            <Link to="/logs" className="text-sm font-medium text-brand-600 dark:text-brand-500">كل السجلات</Link>
-          </div>
-          {!d.recent.length ? <Empty>لا توجد حركة بعد</Empty> : (
-            <ul className="divide-y divide-slate-100 dark:divide-ink-800">{d.recent.map((r) => <LogItem key={r.id} r={r} onImage={setImg} />)}</ul>
-          )}
+      <div className="card mt-5 overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3 font-bold dark:border-ink-700">
+          <span className="relative flex size-2.5"><span className="absolute inset-0 animate-ping rounded-full bg-emerald-400 opacity-70" /><span className="relative size-2.5 rounded-full bg-emerald-500" /></span>
+          آخر الحركة
+          <span className="ms-auto text-xs font-normal text-slate-500">اليوم: {d.today.entries} دخول{d.gates.some((g) => g.columns === 2) ? ` · ${d.today.exits} خروج` : ''}</span>
         </div>
-        <div className="card p-4 lg:col-span-2">
-          <h2 className="mb-4 font-bold">حركة اليوم حسب الساعة</h2>
-          <HourlyChart hours={d.hours} />
-        </div>
+        {!d.recent.length ? <Empty>لا توجد حركة بعد</Empty> : (
+          <ul className="divide-y divide-slate-100 dark:divide-ink-800">{d.recent.map((r) => <LogItem key={r.id} r={r} onImage={setImg} />)}</ul>
+        )}
       </div>
 
       <ImageViewer src={img} onClose={() => setImg(null)} />
-      <Modal open={!!confirm} onClose={() => setConfirm(null)} title="تأكيد الفتح اليدوي"
+      <Modal open={!!confirm} onClose={() => setConfirm(null)} title="تأكيد الفتح"
         footer={<>
           <button type="button" className="btn-ghost flex-1" onClick={() => setConfirm(null)}>إلغاء</button>
-          <button type="button" className="btn-primary flex-1" disabled={busy} onClick={() => open(confirm.gate, confirm.dir)}><Icon name="gate" />افتح الآن</button>
+          <button type="button" className="btn-primary flex-1" disabled={busy} onClick={open}><Icon name="gate" />افتح الآن</button>
         </>}>
-        {confirm && <p>سيتم فتح <b>{confirm.dir === 'in' ? 'بوابة الدخول' : 'بوابة الخروج'}</b> في «{confirm.gate.name}» عن بُعد، وسيُسجَّل ذلك باسمك.</p>}
+        {confirm && <p>سيتم فتح <b>{COLUMN_LABEL[confirm.dir]}</b> في «{confirm.gate.name}» الآن.</p>}
       </Modal>
     </>
   );

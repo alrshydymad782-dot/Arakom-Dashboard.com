@@ -53,10 +53,12 @@ function openAllActive(gate) {
 
 // إرسال أمر الفتح:
 //  1) الأمر الموحد لأراكم: arakom/gates/{gate_id}/command  ← { "action": "OPEN_BARRIER", "relay_id": 1 }
-//  2) أمر المصنع iooutput إلى موضوع الكاميرا نفسها (الكاميرا تشغّل الريليه عبر منفذ IO رقم 1)
-function sendOpen(gate, camera) {
+//     عمود الدخول = ريليه 1 ، عمود الخروج = ريليه 2
+//  2) أمر المصنع iooutput إلى كاميرا نفس العمود (الكاميرا تشغّل ذراعها عبر منفذ IO رقم 1)
+function sendOpen(gate, camera, direction) {
+  const dir = direction || camera?.direction || 'in';
   const topic = config.mqtt.gateCommandTopic.replace('{gate_id}', gate.code);
-  mq.publish(topic, { action: 'OPEN_BARRIER', relay_id: gate.relay_id });
+  mq.publish(topic, { action: 'OPEN_BARRIER', relay_id: dir === 'out' ? 2 : 1 });
   if (config.mqtt.sendCameraIoCommand && camera?.subtopic) mq.publish(camera.subtopic, build.ioOutput('on', 1));
 }
 
@@ -124,7 +126,7 @@ async function handlePlateReading(camera, msg, extra = {}) {
 
   if (result.decision === 'opened' && !isBacklog) {
     try {
-      sendOpen(gate, camera);
+      sendOpen(gate, camera, direction);
     } catch (e) {
       await query("UPDATE access_logs SET decision='denied', reason='broker_offline' WHERE id=$1", [log.id]);
       log.decision = 'denied';
@@ -139,9 +141,9 @@ async function handlePlateReading(camera, msg, extra = {}) {
 async function manualOpen(user, gateId, direction) {
   const gate = await one('SELECT * FROM gates WHERE id = $1', [gateId]);
   if (!gate) throw Object.assign(new Error('البوابة غير موجودة'), { status: 404 });
-  const camera = await one('SELECT * FROM cameras WHERE gate_id = $1 AND direction = $2', [gate.id, direction])
-    || await one('SELECT * FROM cameras WHERE gate_id = $1 ORDER BY id LIMIT 1', [gate.id]);
-  sendOpen(gate, camera);
+  // كاميرا نفس العمود فقط (لا نفتح عمود الدخول بدل الخروج)
+  const camera = await one('SELECT * FROM cameras WHERE gate_id = $1 AND direction = $2', [gate.id, direction]);
+  sendOpen(gate, camera, direction);
   const log = await insertLog({
     tenant_id: gate.tenant_id, gate_id: gate.id, camera_id: camera?.id ?? null, camera_sn: camera?.sn ?? null,
     plate_raw: 'MANUAL', plate_key: 'MANUAL', direction, decision: 'opened', reason: 'manual', source: 'manual',

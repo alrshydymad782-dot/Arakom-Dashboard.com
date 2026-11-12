@@ -1,10 +1,33 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import { fmtDate, randomPassword, durationLabel, daysLeftText } from '../lib/format';
-import { Badge, Empty, Field, Icon, Modal, PageHeader, Spinner, Tabs, useAction } from '../components/ui';
+import { daysLeftText, fmtDate } from '../lib/format';
+import { Badge, Empty, Field, Icon, Modal, PageHeader, Spinner, Tabs, useAction, useToast } from '../components/ui';
 
-const COUNTRIES = [['SA', 'السعودية'], ['AE', 'الإمارات'], ['KW', 'الكويت'], ['QA', 'قطر'], ['BH', 'البحرين'], ['OM', 'عُمان']];
+export const DAY_PRESETS = [30, 90, 180, 365];
+
+// حالة لوحة العميل
+export function LockBadge({ t }) {
+  if (t.status === 'suspended') return <Badge tone="gray">موقوفة</Badge>;
+  if (!t.ends_at) return <Badge tone="amber">بدون اشتراك</Badge>;
+  if (!t.can_access) return <Badge tone="red">مقفلة (انتهى)</Badge>;
+  return <Badge tone={t.days_left <= 5 ? 'amber' : 'green'}>مفتوحة</Badge>;
+}
+
+// نسخ رابط العميل أو إرساله عبر واتساب
+export function LinkActions({ link, name, phone }) {
+  const toast = useToast();
+  const copy = () => navigator.clipboard?.writeText(link).then(() => toast('تم نسخ رابط العميل'), () => toast('انسخ الرابط يدوياً', 'err'));
+  const msg = encodeURIComponent(`مرحباً ${name || ''}،\nهذا رابط لوحة التحكم الخاصة ببواباتك في أراكم:\n${link}\nاحفظه ولا تشاركه مع أحد.`);
+  const wa = `https://wa.me/${String(phone || '').replace(/\D/g, '').replace(/^05/, '9665')}?text=${msg}`;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <button type="button" className="btn-ghost btn-sm" onClick={copy}><Icon name="list" className="size-4" />نسخ الرابط</button>
+      <a className="btn-ghost btn-sm" href={wa} target="_blank" rel="noopener">واتساب</a>
+      <a className="btn-ghost btn-sm" href={link} target="_blank" rel="noopener">فتح</a>
+    </div>
+  );
+}
 
 export default function Tenants() {
   const [rows, setRows] = useState(null);
@@ -20,97 +43,83 @@ export default function Tenants() {
 
   const list = useMemo(() => (rows || []).filter((t) => {
     if (q && !`${t.name} ${t.city ?? ''} ${t.phone ?? ''} ${t.contact_name ?? ''}`.includes(q)) return false;
-    if (filter === 'active') return t.status === 'active' && t.can_access;
-    if (filter === 'expired') return t.status === 'active' && !t.can_access;
-    if (filter === 'none') return !t.ends_at;
-    if (filter === 'suspended') return t.status === 'suspended';
+    if (filter === 'open') return t.status === 'active' && t.can_access;
+    if (filter === 'locked') return t.status !== 'active' || !t.can_access;
+    if (filter === 'soon') return t.can_access && t.days_left <= 7;
     return true;
   }), [rows, q, filter]);
 
   const submit = async (e) => {
     e.preventDefault();
-    const t = await run(() => api('/admin/tenants', { body: form }), 'تم إنشاء المجمع');
-    if (t) {
-      if (form.email || form.phone) setCreated({ id: t.id, email: form.email, phone: form.phone, password: form.admin_password });
-      else nav(`/tenants/${t.id}`);
-      setForm(null);
-      load();
-    }
+    const r = await run(() => api('/admin/tenants', { body: form }), 'تم إنشاء لوحة العميل');
+    if (r) { setCreated({ ...r, phone: form.phone }); setForm(null); load(); }
   };
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
   return (
     <>
-      <PageHeader title="المجمعات والعملاء" subtitle={rows ? `${rows.length} مجمع` : ''}
-        actions={<button type="button" className="btn-primary" onClick={() => setForm({
-          name: '', contact_name: '', phone: '', email: '', city: '', country: 'SA', admin_password: randomPassword(),
-        })}><Icon name="plus" className="size-4" />مجمع جديد</button>} />
+      <PageHeader title="العملاء ولوحاتهم" subtitle={rows ? `${rows.length} عميل` : ''}
+        actions={<button type="button" className="btn-primary" onClick={() => setForm({ name: '', contact_name: '', phone: '', city: '', notes: '', days: 30 })}>
+          <Icon name="plus" className="size-4" />عميل جديد</button>} />
 
       <div className="mb-4 flex flex-wrap gap-3">
         <input className="input min-w-60 flex-1" placeholder="بحث بالاسم أو المدينة أو الجوال" value={q} onChange={(e) => setQ(e.target.value)} />
-        <Tabs value={filter} onChange={setFilter} items={[['', 'الكل'], ['active', 'فعال'], ['expired', 'منتهي'], ['none', 'بدون اشتراك'], ['suspended', 'موقوف']]} />
+        <Tabs value={filter} onChange={setFilter} items={[['', 'الكل'], ['open', 'مفتوحة'], ['soon', 'تنتهي قريباً'], ['locked', 'مقفلة']]} />
       </div>
 
       <div className="card overflow-hidden">
-        {!rows ? <Spinner /> : !list.length ? <Empty>لا يوجد مجمعات</Empty> : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 dark:bg-ink-800/60"><tr>
-                <th className="th">المجمع</th><th className="th">التواصل</th><th className="th">الاشتراك</th><th className="th">البوابات</th>
-                <th className="th">الكاميرات</th><th className="th">السيارات</th><th className="th">الحالة</th>
-              </tr></thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-ink-800">
-                {list.map((t) => (
-                  <tr key={t.id} className="cursor-pointer hover:bg-slate-50 dark:hover:bg-ink-800/50" onClick={() => nav(`/tenants/${t.id}`)}>
-                    <td className="td"><Link to={`/tenants/${t.id}`} className="font-semibold">{t.name}</Link><div className="text-xs text-slate-500">{t.city}</div></td>
-                    <td className="td"><div>{t.contact_name || '—'}</div><div className="text-xs text-slate-500" dir="ltr">{t.phone}</div></td>
-                    <td className="td">{t.ends_at ? <>{daysLeftText(t.days_left)}<div className="text-xs text-slate-500">آخر مدة: {durationLabel(t.duration_months)} · حتى {fmtDate(t.ends_at)}</div></> : <span className="text-slate-400">بدون اشتراك</span>}</td>
-                    <td className="td">{t.gates}</td>
-                    <td className="td">{t.cameras_online}/{t.cameras}</td>
-                    <td className="td">{t.vehicles}{t.max_vehicles ? ` / ${t.max_vehicles}` : ''}</td>
-                    <td className="td">
-                      {t.status === 'suspended' ? <Badge tone="gray">موقوف</Badge> : t.can_access ? <Badge tone="green">فعال</Badge> : t.ends_at ? <Badge tone="red">منتهي</Badge> : <Badge tone="amber">بانتظار الدفع</Badge>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        {!rows ? <Spinner /> : !list.length ? <Empty>لا يوجد عملاء. أضف أول عميل لإنشاء لوحة تحكمه.</Empty> : (
+          <ul className="divide-y divide-slate-100 dark:divide-ink-800">
+            {list.map((t) => (
+              <li key={t.id} className="flex flex-wrap items-center gap-3 px-4 py-3.5">
+                <Link to={`/tenants/${t.id}`} className="min-w-48 flex-1">
+                  <div className="font-bold">{t.name}</div>
+                  <div className="text-xs text-slate-500">
+                    {t.ends_at ? `${daysLeftText(t.days_left)} · حتى ${fmtDate(t.ends_at)}` : 'بدون اشتراك'} · {t.gates} بوابة · {t.vehicles} سيارة
+                  </div>
+                </Link>
+                <LockBadge t={t} />
+                <LinkActions link={t.link} name={t.contact_name || t.name} phone={t.phone} />
+                <button type="button" className="btn-primary btn-sm" onClick={() => nav(`/tenants/${t.id}`)}>إدارة</button>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 
-      <Modal open={!!form} onClose={() => setForm(null)} title="إضافة مجمع / منشأة" wide>
+      <Modal open={!!form} onClose={() => setForm(null)} title="عميل جديد">
         {form && (
           <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
-            <Field label="اسم المجمع أو المنشأة *" className="sm:col-span-2"><input className="input" required value={form.name} onChange={set('name')} /></Field>
+            <Field label="اسم العميل / المجمع *" className="sm:col-span-2"><input className="input" required value={form.name} onChange={set('name')} /></Field>
             <Field label="اسم المسؤول"><input className="input" value={form.contact_name} onChange={set('contact_name')} /></Field>
-            <Field label="الجوال (يُستخدم لربط مدفوعات سلة)"><input className="input" dir="ltr" value={form.phone} onChange={set('phone')} /></Field>
-            <Field label="البريد الإلكتروني"><input className="input" dir="ltr" type="email" value={form.email} onChange={set('email')} /></Field>
+            <Field label="الجوال (لإرسال الرابط عبر واتساب)"><input className="input" dir="ltr" type="tel" value={form.phone} onChange={set('phone')} placeholder="05xxxxxxxx" /></Field>
             <Field label="المدينة"><input className="input" value={form.city} onChange={set('city')} /></Field>
-            <Field label="الدولة"><select className="input" value={form.country} onChange={set('country')}>{COUNTRIES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-
-            <div className="rounded-xl bg-brand-50 p-3 text-xs text-brand-700 sm:col-span-2 dark:bg-ink-800 dark:text-brand-100">
-              الاشتراك يُضاف تلقائياً عندما يدفع العميل في متجر سلة (يُتعرف عليه من الجوال أو البريد)، أو تضيفه يدوياً من صفحة المجمع.
+            <Field label="ملاحظات"><input className="input" value={form.notes} onChange={set('notes')} /></Field>
+            <div className="sm:col-span-2">
+              <span className="label">مدة الاشتراك (تُقفل اللوحة تلقائياً بعدها)</span>
+              <div className="flex flex-wrap items-center gap-2">
+                {DAY_PRESETS.map((d) => (
+                  <button key={d} type="button" onClick={() => setForm({ ...form, days: d })}
+                    className={`rounded-xl border-2 px-3 py-2 text-sm font-bold ${Number(form.days) === d ? 'border-brand-500 bg-brand-50 text-brand-600 dark:bg-ink-800' : 'border-slate-200 dark:border-ink-700'}`}>{d} يوم</button>
+                ))}
+                <input className="input w-28" type="number" min="1" max="3650" value={form.days} onChange={set('days')} aria-label="عدد الأيام" />
+                <span className="text-sm text-slate-500">يوم</span>
+              </div>
             </div>
-            <div className="mt-2 text-sm font-bold sm:col-span-2">الدخول إلى app.arakom.sa</div>
-            <p className="-mt-1 text-xs text-slate-500 sm:col-span-2">يدخل مدير المجمع بالبريد أو الجوال أعلاه (نفس بيانات حسابه في متجر أراكم).</p>
-            <Field label="كلمة المرور (اختيارية إن وُجد بريد — يمكنه الدخول برمز يصل لبريده)" className="sm:col-span-2"><input className="input" dir="ltr" value={form.admin_password} onChange={set('admin_password')} /></Field>
-
-            <div className="mt-3 flex gap-2 sm:col-span-2">
+            <div className="mt-2 flex gap-2 sm:col-span-2">
               <button type="button" className="btn-ghost flex-1" onClick={() => setForm(null)}>إلغاء</button>
-              <button className="btn-primary flex-1" disabled={busy}>إنشاء</button>
+              <button className="btn-primary flex-1" disabled={busy}>إنشاء لوحة العميل</button>
             </div>
           </form>
         )}
       </Modal>
 
-      <Modal open={!!created} onClose={() => { nav(`/tenants/${created.id}`); setCreated(null); }} title="بيانات دخول مدير المجمع">
+      <Modal open={!!created} onClose={() => { nav(`/tenants/${created.id}`); setCreated(null); }} title="تم إنشاء لوحة العميل">
         {created && <>
-          <p className="mb-3 text-sm">أرسل هذه البيانات لمدير المجمع. لن تظهر كلمة المرور مرة أخرى.</p>
-          <div className="rounded-xl bg-slate-100 p-4 font-mono text-sm dark:bg-ink-800" dir="ltr">
-            https://app.arakom.sa<br />{created.email && <>Email: <b>{created.email}</b><br /></>}{created.phone && <>Phone: <b>{created.phone}</b><br /></>}{created.password && <>Pass: <b>{created.password}</b></>}
-          </div>
-          <button type="button" className="btn-primary mt-4 w-full" onClick={() => { nav(`/tenants/${created.id}`); setCreated(null); }}>متابعة لإضافة البوابات</button>
+          <p className="mb-2 text-sm">هذا رابط لوحة التحكم الخاصة بـ «{created.name}». أرسله للعميل، ويفتحه مباشرة بدون كلمة مرور:</p>
+          <div className="mb-3 break-all rounded-xl bg-slate-100 p-3 font-mono text-xs dark:bg-ink-800" dir="ltr">{created.link}</div>
+          <LinkActions link={created.link} name={created.name} phone={created.phone} />
+          <button type="button" className="btn-primary mt-4 w-full" onClick={() => { nav(`/tenants/${created.id}`); setCreated(null); }}>التالي: إضافة البوابات</button>
         </>}
       </Modal>
     </>

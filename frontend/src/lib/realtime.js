@@ -1,11 +1,13 @@
 // اتصال Socket.io واحد مشترك لكل الصفحات
 import { io } from 'socket.io-client';
 import { useEffect, useState } from 'react';
+import { PORTAL } from './portal';
 
 let socket = null;
 
 export function getSocket() {
-  if (!socket) socket = io({ path: '/socket.io', withCredentials: true, transports: ['websocket', 'polling'] });
+  // portal يحدد أي جلسة يستخدمها الخادم: الإدارة أو العميل
+  if (!socket) socket = io({ path: '/socket.io', withCredentials: true, transports: ['websocket', 'polling'], query: { portal: PORTAL } });
   return socket;
 }
 

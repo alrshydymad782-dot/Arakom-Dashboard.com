@@ -1,30 +1,32 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api } from './api';
 import { closeSocket } from './realtime';
+import { PORTAL } from './portal';
 
 const AuthCtx = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(undefined); // undefined = جاري التحميل، null = غير مسجل
+  const [user, setUser] = useState(undefined); // undefined = جاري التحميل، null = لا توجد جلسة
 
   const refresh = useCallback(async () => {
-    try { setUser(await api('/auth/me')); } catch { setUser(null); }
+    try { setUser(await api(`/auth/me?portal=${PORTAL}`)); } catch { setUser(null); }
   }, []);
 
   useEffect(() => {
-    refresh();
+    // صفحة رابط العميل /c/{رمز} تفتح الجلسة بنفسها
+    if (!window.location.pathname.startsWith('/c/')) refresh();
     const onUnauth = () => setUser(null);
     window.addEventListener('arakom:unauthorized', onUnauth);
     return () => window.removeEventListener('arakom:unauthorized', onUnauth);
   }, [refresh]);
 
   const logout = useCallback(async () => {
-    await api('/auth/logout', { method: 'POST' }).catch(() => {});
+    await api(`/auth/logout?portal=${PORTAL}`, { method: 'POST' }).catch(() => {});
     closeSocket();
     setUser(null);
   }, []);
 
-  return <AuthCtx.Provider value={{ user, refresh, logout }}>{children}</AuthCtx.Provider>;
+  return <AuthCtx.Provider value={{ user, setUser, refresh, logout }}>{children}</AuthCtx.Provider>;
 }
 
 export const useAuth = () => useContext(AuthCtx);

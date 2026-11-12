@@ -20,7 +20,6 @@ async function housekeeping() {
 async function main() {
   await migrate();
   await seedAdmin();
-  await require('./services/outlook').load(); // تحميل ربط بريد Outlook إن وجد
 
   const server = http.createServer(app);
   realtime.attach(server);

@@ -20,6 +20,8 @@ export async function api(path, { method, body, signal } = {}) {
   if (res.status === 401 && !path.startsWith('/auth/')) {
     window.dispatchEvent(new Event('arakom:unauthorized'));
   }
+  // لوحة العميل مقفلة (انتهى الاشتراك)
+  if (res.status === 403 && data?.locked) window.dispatchEvent(new Event('arakom:locked'));
   if (!res.ok) throw new ApiError(res.status, data?.error || 'تعذر الاتصال بالخادم', data);
   return data;
 }
