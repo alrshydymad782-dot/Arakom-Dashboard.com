@@ -10,6 +10,8 @@ export default function Login({ portal }) {
   const [mode, setMode] = useState('password'); // password | code
   const [step, setStep] = useState('ask'); // في وضع الرمز: ask ثم verify
   const [codeEnabled, setCodeEnabled] = useState(false);
+  const [opts, setOpts] = useState({});
+  const [storeLink, setStoreLink] = useState(null);
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
@@ -17,12 +19,23 @@ export default function Login({ portal }) {
   const [info, setInfo] = useState('');
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { api('/auth/options').then((o) => setCodeEnabled(!!o.emailCode)).catch(() => {}); }, []);
+  useEffect(() => {
+    api('/auth/options').then((o) => {
+      setOpts(o);
+      setCodeEnabled(!!o.emailCode);
+      // مثل الدخول في متجر أراكم: البريد أو الجوال ثم رمز التحقق
+      if (o.emailCode && o.storeLogin && !isAdmin) setMode('code');
+    }).catch(() => {});
+  }, [isAdmin]);
 
   const run = async (fn) => {
     setBusy(true);
     setError('');
-    try { await fn(); } catch (err) { setError(err.message); } finally { setBusy(false); }
+    setStoreLink(null);
+    try { await fn(); } catch (err) {
+      setError(err.message);
+      if (err.data?.not_in_store) setStoreLink(err.data.store_url || opts.storeUrl || null);
+    } finally { setBusy(false); }
   };
 
   const submit = (e) => {
@@ -32,7 +45,7 @@ export default function Login({ portal }) {
     }
     if (step === 'ask') {
       return run(async () => {
-        const r = await api('/auth/code/request', { body: { identifier } });
+        const r = await api('/auth/code/request', { body: { identifier, portal } });
         setInfo(r.message);
         setStep('verify');
       });
@@ -47,10 +60,10 @@ export default function Login({ portal }) {
       <form onSubmit={submit} className="card w-full max-w-sm p-6 sm:p-8">
         <div className="mx-auto mb-3 w-52 rounded-2xl bg-white p-3"><img src="/logo.png" alt="ARAKOM أراكم" className="w-full" /></div>
         <p className="mb-5 text-center text-sm text-slate-500 dark:text-slate-400">
-          {isAdmin ? 'لوحة الإدارة العليا' : 'ادخل بنفس البريد أو الجوال المسجل في متجر أراكم'}
+          {isAdmin ? 'لوحة الإدارة العليا' : 'ادخل بنفس حسابك في متجر أراكم (البريد أو الجوال)'}
         </p>
 
-        {codeEnabled && (
+        {codeEnabled && (isAdmin || !opts.storeLogin) && (
           <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm dark:bg-ink-800">
             {[['password', 'كلمة المرور'], ['code', 'رمز على البريد']].map(([m, label]) => (
               <button key={m} type="button" onClick={() => switchMode(m)}
@@ -80,10 +93,21 @@ export default function Login({ portal }) {
           </button>
         </>}
 
-        {error && <div className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">{error}</div>}
+        {error && (
+          <div className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
+            {error}
+            {storeLink && <a href={storeLink} target="_blank" rel="noopener" className="mt-2 block font-bold text-brand-600 underline dark:text-brand-500">التسجيل في متجر أراكم ←</a>}
+          </div>
+        )}
         <button className="btn-primary mt-6 w-full py-3" disabled={busy}>
           {busy ? 'جاري...' : mode === 'code' && step === 'ask' ? 'أرسل رمز الدخول' : <><Icon name={isAdmin ? 'shield' : 'gate'} />دخول</>}
         </button>
+        {!isAdmin && codeEnabled && opts.storeLogin && (
+          <button type="button" className="mt-4 w-full text-center text-xs text-slate-500 hover:text-brand-600"
+            onClick={() => switchMode(mode === 'code' ? 'password' : 'code')}>
+            {mode === 'code' ? 'لديك كلمة مرور؟ الدخول بكلمة المرور' : 'الدخول برمز التحقق (مثل المتجر)'}
+          </button>
+        )}
       </form>
     </div>
   );

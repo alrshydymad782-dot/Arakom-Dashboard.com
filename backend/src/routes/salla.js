@@ -17,7 +17,8 @@ const config = require('../config');
 const { one, tx } = require('../db');
 const { fail } = require('../http');
 const subs = require('../services/subscriptions');
-const { createUser } = require('../services/users');
+const { tenantForStoreCustomer } = require('../services/provision');
+const sallaStore = require('../services/sallaStore');
 const realtime = require('../realtime');
 
 const router = express.Router();
@@ -81,23 +82,6 @@ function findDuration(items) {
   return null;
 }
 
-// أول شراء من عميل جديد: إنشاء حساب مجمع له تلقائياً بنفس بريده وجواله في متجر سلة
-async function provisionTenant(cust) {
-  const { phoneKey, normEmail } = require('../services/identity');
-  const email = normEmail(cust.email);
-  if (!email && !phoneKey(cust.phone)) return null;
-  return tx(async (c) => {
-    const t = (await c.query(`INSERT INTO tenants (name, contact_name, phone, email, salla_customer_id, source)
-      VALUES ($1, $2, $3, $4, $5, 'salla') RETURNING *`,
-    [cust.name || 'عميل متجر أراكم', cust.name, cust.phone, email, cust.id])).rows[0];
-    // إن كان البريد أو الجوال مسجلاً لمستخدم آخر لا نُنشئ حساباً مكرراً (يربطه المدير يدوياً)
-    await createUser(c, { tenantId: t.id, role: 'tenant_admin', full_name: cust.name, email, phone: cust.phone, allowPasswordless: true })
-      .catch((e) => { if (e.status !== 409) throw e; });
-    realtime.emitAdmins('tenant:new', { id: t.id, name: t.name, source: 'salla' });
-    return t;
-  });
-}
-
 // تطبيق دفعة محفوظة على مجمع (يُستخدم من الويب هوك ومن لوحة الإدارة)
 async function applyPayment(paymentId, tenantId, monthsOverride) {
   return tx(async (c) => {
@@ -132,6 +116,15 @@ router.post('/', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) =>
   try { body = JSON.parse(raw.toString('utf8')); } catch { return res.status(400).json({ error: 'invalid json' }); }
 
   const event = String(body.event || '');
+
+  // عند تثبيت تطبيق أراكم على متجرك ترسل سلة صلاحية الوصول للمتجر (Easy Mode)
+  if (event === 'app.store.authorize') {
+    const d = body.data || {};
+    if (!d.access_token) return res.status(400).json({ error: 'missing token' });
+    await sallaStore.saveTokens({ ...d, merchantId: body.merchant });
+    realtime.emitAdmins('salla:connected', { merchant: body.merchant });
+    return res.json({ ok: true, connected: true });
+  }
   if (!config.salla.paidEvents.includes(event)) return res.json({ ok: true, ignored: 'event' });
 
   const o = extractOrder(body);
@@ -141,7 +134,7 @@ router.post('/', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) =>
   try {
     const duration = findDuration(o.items);
     let tenant = await findTenant(o.customer);
-    if (!tenant && duration) tenant = await provisionTenant(o.customer);
+    if (!tenant && duration) tenant = await tenantForStoreCustomer(o.customer);
     const status = tenant && duration ? 'applied' : 'unmatched';
 
     // order_id فريد: إن وصلت نفس الدفعة مرة ثانية لا تُطبّق مرتين

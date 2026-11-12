@@ -13,6 +13,33 @@ const { verifyPassword, hashPassword } = require('../services/passwords');
 const { setSessionCookie, clearSessionCookie } = require('../services/auth');
 const { findUser } = require('../services/identity');
 const mailer = require('../services/mailer');
+const sallaStore = require('../services/sallaStore');
+const { tenantForStoreCustomer } = require('../services/provision');
+
+const notInStore = () => Object.assign(new Error('هذا الحساب غير مسجل في متجر أراكم. سجّل في المتجر أولاً بنفس البريد أو الجوال ثم ادخل هنا'), {
+  status: 404, extra: { not_in_store: true, store_url: config.salla.storeUrl || null },
+});
+
+/*
+ * التحقق من أن العميل مسجل في متجر أراكم على سلة (نفس الحساب).
+ * يُطبق على عملاء المجمعات فقط (الإدارة وحراس البوابات لا يحتاجون حساباً في المتجر).
+ * يعيد عميل سلة أو null إن كان المتجر غير مربوط بعد (فيُسمح للحسابات الموجودة لدينا مؤقتاً).
+ */
+async function storeCustomerFor(identifier) {
+  try {
+    const cust = await sallaStore.findCustomer(identifier);
+    if (!cust) throw notInStore();
+    return cust;
+  } catch (e) {
+    if (e.code === 'SALLA_NOT_CONNECTED') return null;
+    throw e;
+  }
+}
+
+const maskEmail = (e) => {
+  const [u, d] = String(e).split('@');
+  return `${u.slice(0, 2)}${'*'.repeat(Math.max(1, u.length - 2))}@${d}`;
+};
 
 const router = express.Router();
 
@@ -47,7 +74,7 @@ async function startSession(req, res, u, method) {
   return { ok: true, role: u.role };
 }
 
-router.get('/options', (_req, res) => res.json({ emailCode: codesEnabled() }));
+router.get('/options', (_req, res) => res.json({ emailCode: codesEnabled(), storeLogin: config.salla.storeLoginOnly, storeUrl: config.salla.storeUrl || null }));
 
 // الدخول بكلمة المرور
 router.post('/login', h(async (req, res) => {
@@ -59,27 +86,50 @@ router.post('/login', h(async (req, res) => {
     fail(401, 'البريد/الجوال أو كلمة المرور غير صحيحة');
   }
   await checkAccount(u, portal);
+  if (config.salla.storeLoginOnly && u.role === 'tenant_admin') await storeCustomerFor(u.email || u.phone);
   attempts.delete(`pw:${req.ip}`);
   return startSession(req, res, u, 'password');
 }));
 
 const hashCode = (code, userId) => crypto.createHmac('sha256', config.jwtSecret).update(`${userId}:${code}`).digest('hex');
 
-// طلب رمز دخول إلى البريد. الرد واحد دائماً حتى لا يُعرف هل البريد مسجل أم لا
+// طلب رمز دخول (مثل الدخول في المتجر: البريد أو الجوال ثم رمز)
 router.post('/code/request', h(async (req) => {
   if (!codesEnabled()) fail(400, 'الدخول بالرمز غير مفعل، استخدم كلمة المرور');
-  const bad = guard(`code:${req.ip}`);
-  bad(); // كل طلب يُحسب ضمن الحد
-  const u = await findUser(req.body?.identifier);
-  if (u?.email && u.active) {
-    const recent = await one("SELECT 1 FROM login_codes WHERE user_id = $1 AND created_at > now() - interval '60 seconds'", [u.id]);
-    if (!recent) {
-      const code = String(crypto.randomInt(0, 1e6)).padStart(6, '0');
-      await query("INSERT INTO login_codes (user_id, code_hash, expires_at) VALUES ($1, $2, now() + interval '10 minutes')", [u.id, hashCode(code, u.id)]);
-      await mailer.sendLoginCode(u.email, code).catch((e) => console.error('[mail]', e.message));
+  guard(`code:${req.ip}`)(); // كل طلب يُحسب ضمن الحد
+  const { identifier, portal } = req.body || {};
+  let u = await findUser(identifier);
+  let email = u?.email || null;
+
+  if (portal !== 'admin' && config.salla.storeLoginOnly && (!u || u.role === 'tenant_admin')) {
+    const cust = await storeCustomerFor(identifier);
+    if (!cust && !u) throw notInStore();
+    if (cust) {
+      if (!u && !cust.email) fail(400, 'لا يوجد بريد إلكتروني في حسابك بالمتجر لإرسال رمز الدخول. أضف بريدك في حسابك بالمتجر ثم حاول مرة أخرى');
+      // أول دخول لعميل المتجر: يُنشأ حسابه تلقائياً بنفس بياناته في المتجر
+      if (!u) {
+        await tenantForStoreCustomer(cust);
+        u = await findUser(cust.email || identifier) || await findUser(identifier);
+      }
+      if (u && !u.email && cust.email) {
+        await query('UPDATE users SET email = $2 WHERE id = $1 AND email IS NULL', [u.id, cust.email]).catch(() => {});
+        u.email = cust.email;
+      }
+      email = u?.email || cust.email;
     }
   }
-  return { ok: true, message: 'إن كان البريد أو الجوال مسجلاً لدينا فستصلك رسالة على البريد فيها رمز الدخول' };
+
+  // الإدارة: لا نكشف هل الحساب موجود
+  if (!u || !u.active) return { ok: true, message: 'إن كان الحساب مسجلاً فستصلك رسالة على البريد فيها رمز الدخول' };
+  if (!email) fail(400, 'لا يوجد بريد إلكتروني في حسابك لإرسال الرمز. أضف بريدك في حسابك بالمتجر ثم حاول مرة أخرى');
+
+  const recent = await one("SELECT 1 FROM login_codes WHERE user_id = $1 AND created_at > now() - interval '60 seconds'", [u.id]);
+  if (!recent) {
+    const code = String(crypto.randomInt(0, 1e6)).padStart(6, '0');
+    await query("INSERT INTO login_codes (user_id, code_hash, expires_at) VALUES ($1, $2, now() + interval '10 minutes')", [u.id, hashCode(code, u.id)]);
+    await mailer.sendLoginCode(email, code).catch((e) => console.error('[mail]', e.message));
+  }
+  return { ok: true, message: `أرسلنا رمز الدخول إلى بريدك ${maskEmail(email)}` };
 }));
 
 // التحقق من الرمز

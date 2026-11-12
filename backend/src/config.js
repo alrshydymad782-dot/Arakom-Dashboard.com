@@ -53,6 +53,15 @@ const config = {
     // أحداث سلة التي تعني دفعة ناجحة
     paidEvents: env('SALLA_PAID_EVENTS', 'order.payment.updated,order.created,order.status.updated').split(','),
     paidStatuses: env('SALLA_PAID_STATUSES', 'paid,completed,delivered,in_progress').split(','),
+    // بيانات تطبيق أراكم في بوابة شركاء سلة (لتجديد صلاحية الوصول للمتجر تلقائياً)
+    clientId: env('SALLA_CLIENT_ID', ''),
+    clientSecret: env('SALLA_CLIENT_SECRET', ''),
+    apiUrl: env('SALLA_API_URL', 'https://api.salla.dev/admin/v2'),
+    tokenUrl: env('SALLA_TOKEN_URL', 'https://accounts.salla.sa/oauth2/token'),
+    // رابط المتجر: يظهر لمن يحاول الدخول وهو غير مسجل في المتجر
+    storeUrl: env('SALLA_STORE_URL', ''),
+    // 1 = لا يدخل عملاء المجمعات إلا إذا كان حسابهم موجوداً في متجر أراكم
+    storeLoginOnly: env('STORE_LOGIN_ONLY', '1') === '1',
   },
 
   // البريد لإرسال رموز الدخول (اختياري — بدونه يكون الدخول بكلمة المرور فقط)

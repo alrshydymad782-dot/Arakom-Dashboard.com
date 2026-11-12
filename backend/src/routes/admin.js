@@ -279,6 +279,14 @@ router.get('/vehicles/:id/document', h(async (req, res) => {
   await require('../services/documents').send(res, v);
 }));
 
+// ---------- حالة ربط متجر سلة ----------
+router.get('/salla/status', h(async () => ({
+  ...(await require('../services/sallaStore').status()),
+  store_login_only: require('../config').salla.storeLoginOnly,
+  webhook_secret_set: !!require('../config').salla.webhookSecret,
+  email_codes: require('../services/mailer').enabled(),
+})));
+
 // ---------- مدفوعات سلة ----------
 router.get('/payments', h(() => many(`SELECT p.id, p.tenant_id, p.event, p.order_id, p.reference_id, p.amount, p.currency, p.customer_name,
     p.customer_phone, p.customer_email, p.sku, p.product_name, p.status, p.months_added, p.created_at, t.name AS tenant_name

@@ -1,8 +1,9 @@
 // الاتصال بالخادم
 export class ApiError extends Error {
-  constructor(status, message) {
+  constructor(status, message, data) {
     super(message);
     this.status = status;
+    this.data = data || {};
   }
 }
 
@@ -19,7 +20,7 @@ export async function api(path, { method, body, signal } = {}) {
   if (res.status === 401 && !path.startsWith('/auth/')) {
     window.dispatchEvent(new Event('arakom:unauthorized'));
   }
-  if (!res.ok) throw new ApiError(res.status, data?.error || 'تعذر الاتصال بالخادم');
+  if (!res.ok) throw new ApiError(res.status, data?.error || 'تعذر الاتصال بالخادم', data);
   return data;
 }
 

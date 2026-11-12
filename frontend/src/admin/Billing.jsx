@@ -10,10 +10,12 @@ export default function Billing() {
   const [payments, setPayments] = useState(null);
   const [tenants, setTenants] = useState([]);
   const [apply, setApply] = useState(null);
+  const [status, setStatus] = useState(null);
   const [run, busy] = useAction();
 
   const load = useCallback(() => api('/admin/payments').then(setPayments), []);
-  useEffect(() => { load(); api('/admin/tenants').then(setTenants); }, [load]);
+  useEffect(() => { load(); api('/admin/tenants').then(setTenants); api('/admin/salla/status').then(setStatus); }, [load]);
+  useLive('salla:connected', useCallback(() => api('/admin/salla/status').then(setStatus), []));
   useLive('payment:new', load);
 
   const doApply = async (e) => {
@@ -26,6 +28,25 @@ export default function Billing() {
   return (
     <>
       <PageHeader title="مدفوعات سلة" subtitle="الاشتراكات تُضاف تلقائياً عند الدفع في متجرك على سلة" />
+
+      {status && (
+        <div className={`card mb-4 p-5 text-sm leading-7 ${status.connected ? '' : 'border-amber-300 dark:border-amber-500/40'}`}>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="text-base font-bold">ربط حسابات العملاء بمتجر أراكم</h2>
+            <Badge tone={status.connected ? 'green' : 'amber'}>{status.connected ? `متصل${status.merchant_name ? ` · ${status.merchant_name}` : ''}` : 'غير متصل'}</Badge>
+          </div>
+          <p>لا يدخل العميل لوحة المجمع إلا إذا كان حسابه (البريد أو الجوال) <b>مسجلاً في متجر أراكم</b>، ويدخل برمز يصل لبريده مثل المتجر تماماً.</p>
+          {!status.connected && (
+            <ol className="mt-2 list-inside list-decimal space-y-1 text-slate-600 dark:text-slate-300">
+              <li>من بوابة شركاء سلة (salla.partners) أنشئ تطبيقاً خاصاً باسم «أراكم» واختر طريقة الربط <b>Easy Mode</b>.</li>
+              <li>فعّل صلاحية <b>Customers - Read</b> (قراءة العملاء) وصلاحية <b>Orders - Read</b>.</li>
+              <li>اجعل رابط الويب هوك للتطبيق هو نفس الرابط في الأسفل، ثم ثبّت التطبيق على متجر أراكم.</li>
+              <li>ضع Client ID و Client Secret في <code>SALLA_CLIENT_ID</code> و <code>SALLA_CLIENT_SECRET</code> على السيرفر. سيظهر هنا «متصل» تلقائياً.</li>
+            </ol>
+          )}
+          {!status.email_codes && <p className="mt-2 font-semibold text-amber-700 dark:text-amber-300">لم يُضبط بريد إرسال رموز الدخول (SMTP) بعد.</p>}
+        </div>
+      )}
 
       <div className="card mb-4 p-5 text-sm leading-7">
         <h2 className="mb-2 text-base font-bold">طريقة الربط مع متجر سلة</h2>
