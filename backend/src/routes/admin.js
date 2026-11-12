@@ -279,6 +279,27 @@ router.get('/vehicles/:id/document', h(async (req, res) => {
   await require('../services/documents').send(res, v);
 }));
 
+// ---------- بريد إرسال رموز الدخول (Outlook) ----------
+const outlook = require('../services/outlook');
+router.get('/mail/status', h(async () => ({ outlook: await outlook.status(), smtp: !!require('../config').smtp.host })));
+router.post('/mail/outlook/start', h(() => outlook.startConnect()));
+router.post('/mail/outlook/poll', h(async (req) => {
+  const r = await outlook.pollConnect();
+  if (r.status === 'connected') await audit(req.user, 'outlook_connected', { email: r.email });
+  return r;
+}));
+router.delete('/mail/outlook', h(async (req) => {
+  await outlook.disconnect();
+  await audit(req.user, 'outlook_disconnected');
+  return { ok: true };
+}));
+router.post('/mail/test', h(async (req) => {
+  const to = String(req.body?.to || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) fail(400, 'اكتب بريداً صحيحاً');
+  await require('../services/mailer').sendTest(to);
+  return { ok: true };
+}));
+
 // ---------- حالة ربط متجر سلة ----------
 router.get('/salla/status', h(async () => ({
   ...(await require('../services/sallaStore').status()),

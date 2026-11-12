@@ -72,6 +72,13 @@ const config = {
     pass: env('SMTP_PASS', ''),
     from: env('SMTP_FROM', ''),
   },
+  // إرسال البريد من حساب Outlook عبر Microsoft Graph (الطريقة المعتمدة من مايكروسوفت)
+  outlook: {
+    clientId: env('MS_CLIENT_ID', ''),          // Application (client) ID من تسجيل التطبيق في Microsoft Entra
+    tenant: env('MS_TENANT', 'common'),         // common = حسابات شخصية وشركات ، consumers = Outlook.com فقط
+    loginUrl: env('MS_LOGIN_URL', 'https://login.microsoftonline.com'),
+    graphUrl: env('MS_GRAPH_URL', 'https://graph.microsoft.com/v1.0'),
+  },
   // في التطوير: إظهار خيار الدخول بالرمز حتى بدون SMTP (الرمز يُطبع في سجل الخادم)
   devLoginCodes: env('DEV_LOGIN_CODES', '0') === '1',
 

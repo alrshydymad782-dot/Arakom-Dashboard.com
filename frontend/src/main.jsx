@@ -41,7 +41,7 @@ const ADMIN_NAV = [
   { to: '/', end: true, icon: 'home', label: 'النظرة العامة', short: 'الرئيسية' },
   { to: '/tenants', icon: 'building', label: 'المجمعات والعملاء', short: 'العملاء' },
   { to: '/cameras', icon: 'camera', label: 'الكاميرات والبوابات', short: 'الكاميرات' },
-  { to: '/billing', icon: 'card', label: 'مدفوعات سلة', short: 'سلة' },
+  { to: '/billing', icon: 'card', label: 'المتجر والبريد', short: 'المتجر' },
   { to: '/system', icon: 'server', label: 'مراقبة النظام', short: 'النظام' },
   { to: '/logs', icon: 'list', label: 'كل السجلات', desktopOnly: true },
 ];

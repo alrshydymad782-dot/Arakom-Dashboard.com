@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import { useLive } from '../lib/realtime';
 import { fmtDateTime, DURATIONS } from '../lib/format';
 import { Badge, Empty, Field, Modal, PageHeader, Spinner, useAction } from '../components/ui';
+import MailCard from './MailCard';
 
 const STATUS = { applied: ['green', 'طُبّقت'], pending: ['amber', 'معلقة'], unmatched: ['red', 'تحتاج ربطاً'], ignored: ['gray', 'متجاهلة'] };
 
@@ -27,8 +28,9 @@ export default function Billing() {
 
   return (
     <>
-      <PageHeader title="مدفوعات سلة" subtitle="الاشتراكات تُضاف تلقائياً عند الدفع في متجرك على سلة" />
+      <PageHeader title="المتجر والبريد" subtitle="ربط متجر أراكم على سلة، وبريد Outlook لرموز الدخول، والمدفوعات" />
 
+      <MailCard />
       {status && (
         <div className={`card mb-4 p-5 text-sm leading-7 ${status.connected ? '' : 'border-amber-300 dark:border-amber-500/40'}`}>
           <div className="mb-2 flex items-center justify-between gap-2">
@@ -44,7 +46,6 @@ export default function Billing() {
               <li>ضع Client ID و Client Secret في <code>SALLA_CLIENT_ID</code> و <code>SALLA_CLIENT_SECRET</code> على السيرفر. سيظهر هنا «متصل» تلقائياً.</li>
             </ol>
           )}
-          {!status.email_codes && <p className="mt-2 font-semibold text-amber-700 dark:text-amber-300">لم يُضبط بريد إرسال رموز الدخول (SMTP) بعد.</p>}
         </div>
       )}
 

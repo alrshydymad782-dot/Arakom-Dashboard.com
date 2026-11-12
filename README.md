@@ -136,6 +136,22 @@ bash deploy/setup.sh
    عند التثبيت ترسل سلة صلاحية الوصول للمتجر تلقائياً، ويظهر «متصل» في صفحة «مدفوعات سلة».
 4. ضع في `.env`: `SALLA_CLIENT_ID` و`SALLA_CLIENT_SECRET` (لتجديد الصلاحية تلقائياً كل 14 يوماً)، و`SALLA_STORE_URL` (رابط المتجر: https://arakom-store.com/ar)، وإعدادات البريد `SMTP_*`.
 
+### بريد Outlook لإرسال رموز الدخول
+تُرسل رموز الدخول للعملاء من حساب Outlook الخاص بأراكم.
+مايكروسوفت لم تعد تسمح للبرامج بالإرسال بكلمة المرور، لذلك يكون الربط بتسجيل الدخول في موقع مايكروسوفت مرة واحدة، ولا تُحفظ كلمة المرور.
+
+**مرة واحدة (5 دقائق):**
+1. ادخل [Microsoft Entra — App registrations](https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade) بنفس حساب Outlook، ثم **New registration**:
+   - الاسم: `Arakom Mail`
+   - Supported account types: **Accounts in any organizational directory and personal Microsoft accounts**
+2. من صفحة التطبيق ← **Authentication** ← فعّل **Allow public client flows** ← Save.
+3. من **API permissions** ← Add ← Microsoft Graph ← Delegated ← أضف **Mail.Send** و **User.Read** و **offline_access**.
+4. انسخ **Application (client) ID** وضعه في `.env`: `MS_CLIENT_ID=...` ثم `docker compose up -d`.
+5. في لوحة الإدارة ← **المتجر والبريد** ← **ربط بريد Outlook**: يظهر رمز، افتح `microsoft.com/devicelogin`، سجّل الدخول بحساب Outlook واكتب الرمز. يظهر «مربوط» خلال ثوانٍ.
+6. جرّب «إرسال تجربة» إلى بريدك.
+
+> إن غيّرت كلمة مرور حساب Outlook أو ألغيت الإذن، سيظهر «انتهى الربط» في نفس الصفحة: اضغط «ربط بريد Outlook» مرة أخرى.
+
 > سلة لا تتيح لنا معرفة كلمة مرور العميل ولا إرسال رمز من حسابها، لذلك نتحقق من وجود الحساب في المتجر ونرسل الرمز إلى بريد العميل المسجل فيه.
 > إن كان العميل مسجلاً في المتجر بالجوال فقط بدون بريد، سيُطلب منه إضافة بريده في حسابه بالمتجر. (يمكن لاحقاً إرسال الرمز برسالة SMS عبر مزود سعودي.)
 
