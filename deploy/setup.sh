@@ -4,6 +4,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# سيرفر صغير (أقل من 3GB رام): نضيف ذاكرة احتياطية 2GB حتى لا يتوقف أثناء بناء النظام
+if [ "$(free -m | awk '/^Mem:/{print $2}')" -lt 3000 ] && [ "$(swapon --show | wc -l)" -eq 0 ]; then
+  echo ">> إضافة ذاكرة احتياطية (Swap) 2GB..."
+  fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
   echo ">> تثبيت Docker..."
   curl -fsSL https://get.docker.com | sh
