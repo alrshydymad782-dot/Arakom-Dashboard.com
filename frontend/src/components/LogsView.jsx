@@ -67,7 +67,7 @@ export default function LogsView({ base, tenants }) {
   return (
     <>
       <form onSubmit={submit} className="card mb-4 grid grid-cols-2 gap-3 p-4 md:grid-cols-4 xl:grid-cols-7">
-        <input className="input col-span-2" placeholder="رقم اللوحة، اسم المالك أو الوحدة" value={filters.q} onChange={set('q')} />
+        <input className="input col-span-2" placeholder="رقم اللوحة" value={filters.q} onChange={set('q')} />
         {isAdmin && (
           <select className="input" value={filters.tenant_id} onChange={set('tenant_id')}>
             <option value="">كل المجمعات</option>
@@ -102,7 +102,7 @@ export default function LogsView({ base, tenants }) {
               <table className="w-full">
                 <thead className="bg-slate-50 dark:bg-ink-800/60"><tr>
                   <th className="th">الوقت</th>{isAdmin && <th className="th">المجمع</th>}<th className="th">البوابة</th><th className="th">الاتجاه</th>
-                  <th className="th">اللوحة</th><th className="th">صاحب السيارة</th><th className="th">الحالة</th><th className="th">الصورة</th>
+                  <th className="th">اللوحة</th><th className="th">الحالة</th><th className="th">الصورة</th>
                 </tr></thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-ink-800">
                   {data.rows.map((r) => (
@@ -112,7 +112,6 @@ export default function LogsView({ base, tenants }) {
                       <td className="td">{r.gate_name || '—'}</td>
                       <td className="td"><DirectionBadge direction={r.direction} /></td>
                       <td className="td"><Plate plateKey={r.plate_key} raw={r.plate_raw} /></td>
-                      <td className="td">{r.source === 'manual' ? <span className="text-slate-500">بواسطة {r.opened_by_name}</span> : <>{r.owner_name || '—'}{r.unit_number && <span className="text-slate-500"> · {r.unit_number}</span>}</>}</td>
                       <td className="td"><DecisionBadge decision={r.decision} reason={r.reason} /></td>
                       <td className="td"><Thumb src={r.plate_image || r.full_image} onOpen={setImg} /></td>
                     </tr>
@@ -145,7 +144,7 @@ export function LogItem({ r, onImage, showTenant }) {
           <DirectionBadge direction={r.direction} /><span className="truncate">{r.gate_name || '—'}</span>
         </div>
         <div className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
-          {fmtDateTime(r.occurred_at)}{showTenant && r.tenant_name ? ` · ${r.tenant_name}` : ''}{r.owner_name ? ` · ${r.owner_name}` : ''}
+          {fmtDateTime(r.occurred_at)}{showTenant && r.tenant_name ? ` · ${r.tenant_name}` : ''}{r.source === 'manual' && r.opened_by_name ? ` · ${r.opened_by_name}` : ''}
         </div>
         <div className="mt-1"><DecisionBadge decision={r.decision} reason={r.reason} /></div>
       </div>
@@ -173,7 +172,7 @@ function PrintReport({ report, withTenant }) {
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead><tr style={{ background: '#e7f8f7', color: '#0c365e' }}>
-          {['الوقت', ...(withTenant ? ['المجمع'] : []), 'البوابة', 'الاتجاه', 'اللوحة', 'اللوحة بالعربي', 'صاحب السيارة', 'الوحدة', 'الحالة', 'السبب'].map((h) => (
+          {['الوقت', ...(withTenant ? ['المجمع'] : []), 'البوابة', 'الاتجاه', 'اللوحة', 'اللوحة بالعربي', 'الحالة', 'السبب'].map((h) => (
             <th key={h} style={{ border: '1px solid #ccc', padding: '4px 6px', textAlign: 'right' }}>{h}</th>
           ))}
         </tr></thead>
@@ -181,7 +180,7 @@ function PrintReport({ report, withTenant }) {
           {report.rows.map((r) => (
             <tr key={r.id}>
               {[fmtDateTime(r.occurred_at), ...(withTenant ? [r.tenant_name] : []), r.gate_name, DIRECTION[r.direction] || '',
-                r.source === 'manual' ? 'فتح يدوي' : r.plate_en || r.plate_raw, r.plate_ar, r.owner_name, r.unit_number,
+                r.source === 'manual' ? 'فتح يدوي' : r.plate_en || r.plate_raw, r.plate_ar,
                 r.decision === 'opened' ? 'تم الفتح' : 'مرفوض', REASONS[r.reason] || r.reason].map((v, i) => (
                 <td key={i} style={{ border: '1px solid #ddd', padding: '3px 6px' }}>{v || ''}</td>
               ))}

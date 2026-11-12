@@ -26,6 +26,7 @@ const REASONS_AR = {
   unassigned_camera: 'كاميرا غير مرتبطة ببوابة',
   auto_open_disabled: 'الفتح التلقائي معطل',
   no_plate: 'بدون لوحة',
+  open_all: 'فتح للجميع',
   broker_offline: 'تعذر إرسال الأمر (MQTT غير متصل)',
 };
 
@@ -41,6 +42,13 @@ async function evaluate({ tenantId, plateKey }) {
     if (vehicle.valid_until < today) return { decision: 'denied', reason: 'expired_vehicle', vehicle };
   }
   return { decision: 'opened', reason: 'whitelisted', vehicle };
+}
+
+// هل وضع "فتح البوابة لأي سيارة" مفعل الآن؟ (دائم 24/7، أو مؤقت لساعة / 6 / 12 ساعة)
+function openAllActive(gate) {
+  if (!gate) return false;
+  if (gate.open_all_always) return true;
+  return !!gate.open_all_until && new Date(gate.open_all_until).getTime() > Date.now();
 }
 
 // إرسال أمر الفتح:
@@ -59,7 +67,7 @@ async function insertLog(row) {
     ON CONFLICT (camera_sn, camera_msg_id) WHERE camera_msg_id IS NOT NULL DO NOTHING RETURNING id`, vals);
   if (!log) return null; // رسالة مكررة من الكاميرا
   return one(`SELECT l.*, g.name AS gate_name, g.code AS gate_code, t.name AS tenant_name,
-      v.owner_name, v.unit_number
+      v.owner_name, v.unit_number, v.document_path AS vehicle_document
     FROM access_logs l LEFT JOIN gates g ON g.id = l.gate_id LEFT JOIN tenants t ON t.id = l.tenant_id
     LEFT JOIN vehicles v ON v.id = l.vehicle_id WHERE l.id = $1`, [log.id]);
 }
@@ -78,10 +86,14 @@ async function handlePlateReading(camera, msg, extra = {}) {
 
   let result;
   if (!gate) result = { decision: 'denied', reason: 'unassigned_camera', vehicle: null };
-  else if (!plate.key) result = { decision: 'denied', reason: 'no_plate', vehicle: null };
   else {
-    result = await evaluate({ tenantId: gate.tenant_id, plateKey: plate.key });
+    result = await evaluate({ tenantId: gate.tenant_id, plateKey: plate.key || '' });
+    if (!plate.key && result.reason === 'not_whitelisted') result = { ...result, reason: 'no_plate' };
     if (result.decision === 'opened' && !gate.auto_open) result = { ...result, decision: 'denied', reason: 'auto_open_disabled' };
+    // وضع الفتح للجميع: أي سيارة تدخل ما دام الاشتراك فعالاً
+    if (result.decision === 'denied' && ['not_whitelisted', 'no_plate', 'expired_vehicle', 'blocked'].includes(result.reason) && openAllActive(gate)) {
+      result = { ...result, decision: 'opened', reason: 'open_all' };
+    }
   }
 
   // القراءات المتأخرة (type=offline) هي سجلات مخزنة أثناء انقطاع الاتصال: تُسجل فقط بدون فتح
@@ -140,4 +152,22 @@ async function manualOpen(user, gateId, direction) {
   return log;
 }
 
-module.exports = { evaluate, handlePlateReading, manualOpen, sendOpen, REASONS_AR };
+// ضبط وضع الفتح للجميع: off | 1h | 6h | 12h | always
+const OPEN_ALL_HOURS = { '1h': 1, '6h': 6, '12h': 12 };
+async function setOpenAll(user, gateId, mode, tenantId = null) {
+  if (mode !== 'off' && mode !== 'always' && !OPEN_ALL_HOURS[mode]) {
+    throw Object.assign(new Error('اختر: ساعة، 6 ساعات، 12 ساعة، دائماً، أو إيقاف'), { status: 400 });
+  }
+  const gate = await one(`UPDATE gates SET
+      open_all_always = $2,
+      open_all_until = CASE WHEN $3::int IS NULL THEN NULL ELSE now() + make_interval(hours => $3::int) END,
+      open_all_set_by = $4
+    WHERE id = $1 AND ($5::bigint IS NULL OR tenant_id = $5) RETURNING *`,
+  [gateId, mode === 'always', OPEN_ALL_HOURS[mode] ?? null, user.id, tenantId]);
+  if (!gate) throw Object.assign(new Error('البوابة غير موجودة'), { status: 404 });
+  const state = { gate_id: gate.id, open_all_always: gate.open_all_always, open_all_until: gate.open_all_until };
+  realtime.emit('gate:open_all', state, gate.tenant_id);
+  return gate;
+}
+
+module.exports = { evaluate, handlePlateReading, manualOpen, sendOpen, setOpenAll, openAllActive, REASONS_AR };

@@ -31,7 +31,7 @@ export default function Tenants() {
     e.preventDefault();
     const t = await run(() => api('/admin/tenants', { body: form }), 'تم إنشاء المجمع');
     if (t) {
-      if (form.admin_username) setCreated({ id: t.id, username: form.admin_username.toLowerCase(), password: form.admin_password });
+      if (form.email || form.phone) setCreated({ id: t.id, email: form.email, phone: form.phone, password: form.admin_password });
       else nav(`/tenants/${t.id}`);
       setForm(null);
       load();
@@ -43,7 +43,7 @@ export default function Tenants() {
     <>
       <PageHeader title="المجمعات والعملاء" subtitle={rows ? `${rows.length} مجمع` : ''}
         actions={<button type="button" className="btn-primary" onClick={() => setForm({
-          name: '', contact_name: '', phone: '', email: '', city: '', country: 'SA', admin_username: '', admin_password: randomPassword(),
+          name: '', contact_name: '', phone: '', email: '', city: '', country: 'SA', admin_password: randomPassword(),
         })}><Icon name="plus" className="size-4" />مجمع جديد</button>} />
 
       <div className="mb-4 flex flex-wrap gap-3">
@@ -92,9 +92,9 @@ export default function Tenants() {
             <div className="rounded-xl bg-brand-50 p-3 text-xs text-brand-700 sm:col-span-2 dark:bg-ink-800 dark:text-brand-100">
               الاشتراك يُضاف تلقائياً عندما يدفع العميل في متجر سلة (يُتعرف عليه من الجوال أو البريد)، أو تضيفه يدوياً من صفحة المجمع.
             </div>
-            <div className="mt-2 text-sm font-bold sm:col-span-2">حساب مدير المجمع (للدخول إلى app.arakom.sa)</div>
-            <Field label="اسم المستخدم (إنجليزي)"><input className="input" dir="ltr" autoCapitalize="off" value={form.admin_username} onChange={set('admin_username')} placeholder="مثال: yasmin-compound" /></Field>
-            <Field label="كلمة المرور"><input className="input" dir="ltr" value={form.admin_password} onChange={set('admin_password')} /></Field>
+            <div className="mt-2 text-sm font-bold sm:col-span-2">الدخول إلى app.arakom.sa</div>
+            <p className="-mt-1 text-xs text-slate-500 sm:col-span-2">يدخل مدير المجمع بالبريد أو الجوال أعلاه (نفس بيانات حسابه في متجر أراكم).</p>
+            <Field label="كلمة المرور (اختيارية إن وُجد بريد — يمكنه الدخول برمز يصل لبريده)" className="sm:col-span-2"><input className="input" dir="ltr" value={form.admin_password} onChange={set('admin_password')} /></Field>
 
             <div className="mt-3 flex gap-2 sm:col-span-2">
               <button type="button" className="btn-ghost flex-1" onClick={() => setForm(null)}>إلغاء</button>
@@ -108,7 +108,7 @@ export default function Tenants() {
         {created && <>
           <p className="mb-3 text-sm">أرسل هذه البيانات لمدير المجمع. لن تظهر كلمة المرور مرة أخرى.</p>
           <div className="rounded-xl bg-slate-100 p-4 font-mono text-sm dark:bg-ink-800" dir="ltr">
-            https://app.arakom.sa<br />User: <b>{created.username}</b><br />Pass: <b>{created.password}</b>
+            https://app.arakom.sa<br />{created.email && <>Email: <b>{created.email}</b><br /></>}{created.phone && <>Phone: <b>{created.phone}</b><br /></>}{created.password && <>Pass: <b>{created.password}</b></>}
           </div>
           <button type="button" className="btn-primary mt-4 w-full" onClick={() => { nav(`/tenants/${created.id}`); setCreated(null); }}>متابعة لإضافة البوابات</button>
         </>}

@@ -6,6 +6,7 @@ import { fmtDate, timeAgo, daysLeftText, durationLabel } from '../lib/format';
 import { Icon, OnlineDot, PageHeader, StatCard, Spinner, Empty, useAction, Modal } from '../components/ui';
 import { LogItem, ImageViewer } from '../components/LogsView';
 import HourlyChart from '../components/HourlyChart';
+import OpenAllControl from '../components/OpenAllControl';
 
 export default function Home() {
   const [d, setD] = useState(null);
@@ -38,6 +39,11 @@ export default function Home() {
     });
   }, []));
   useLive('subscription:renewed', load);
+  // تغيير وضع الفتح لأي سيارة (من جهاز آخر أو من الإدارة)
+  const patchGate = useCallback((st) => {
+    setD((p) => p && { ...p, gates: p.gates.map((g) => (g.id === (st.gate_id ?? st.id) ? { ...g, open_all_always: st.open_all_always, open_all_until: st.open_all_until } : g)) });
+  }, []);
+  useLive('gate:open_all', patchGate);
 
   if (!d) return <Spinner />;
   const sub = d.subscription;
@@ -82,7 +88,6 @@ export default function Home() {
                     <div className="text-base font-bold">{g.name}</div>
                     <div className="text-xs text-slate-500 dark:text-slate-400" dir="ltr">{g.code}</div>
                   </div>
-                  {!g.auto_open && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">الفتح التلقائي معطل</span>}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {['in', 'out'].map((dir) => {
@@ -102,6 +107,7 @@ export default function Home() {
                     );
                   })}
                 </div>
+                <div className="mt-3"><OpenAllControl gate={g} onChange={patchGate} /></div>
               </div>
             );
           })}

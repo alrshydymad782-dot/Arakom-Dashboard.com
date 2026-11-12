@@ -1,7 +1,8 @@
 'use strict';
 // مسارات لوحة الإدارة العليا (admin.arakom.sa)
 const express = require('express');
-const { one, many, query, tx, audit } = require('../db');
+const { one, many, query, tx, audit, pool } = require('../db');
+const { createUser } = require('../services/users');
 const { h, fail, requireRole, pickFields, updateSql, intParam } = require('../http');
 const { hashPassword } = require('../services/passwords');
 const logs = require('../services/logs');
@@ -57,7 +58,7 @@ router.get('/tenants/:id', h(async (req) => {
     subs.get(id),
     many(`SELECT g.*, (SELECT json_agg(c ORDER BY c.direction) FROM cameras c WHERE c.gate_id = g.id) AS cameras
       FROM gates g WHERE g.tenant_id = $1 ORDER BY g.id`, [id]),
-    many('SELECT id, username, full_name, phone, role, active, last_login_at FROM users WHERE tenant_id = $1 ORDER BY id', [id]),
+    many('SELECT id, username, full_name, email, phone, role, active, last_login_at, password_hash LIKE \'scrypt$%\' AS has_password FROM users WHERE tenant_id = $1 ORDER BY id', [id]),
     many('SELECT * FROM payments WHERE tenant_id = $1 ORDER BY id DESC LIMIT 20', [id]),
     one('SELECT COUNT(*)::int AS n FROM vehicles WHERE tenant_id = $1', [id]),
   ]);
@@ -72,12 +73,9 @@ router.post('/tenants', h(async (req) => {
   const result = await tx(async (c) => {
     const cols = Object.keys(f);
     const t = (await c.query(`INSERT INTO tenants (${cols.join(',')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(',')}) RETURNING *`, Object.values(f))).rows[0];
-    if (b.admin_username) {
-      const username = String(b.admin_username).trim().toLowerCase();
-      if (!/^[a-z0-9._@-]{3,40}$/.test(username)) fail(400, 'اسم المستخدم: حروف إنجليزية وأرقام فقط');
-      if (!b.admin_password || String(b.admin_password).length < 8) fail(400, 'كلمة مرور مدير المجمع 8 أحرف على الأقل');
-      await c.query(`INSERT INTO users (tenant_id, username, full_name, phone, password_hash, role) VALUES ($1,$2,$3,$4,$5,'tenant_admin')`,
-        [t.id, username, b.contact_name || b.name, b.phone || null, hashPassword(b.admin_password)]);
+    // حساب مدير المجمع: يدخل بنفس البريد/الجوال المسجلين (كلمة المرور اختيارية إن وُجد بريد للدخول بالرمز)
+    if (b.create_login !== false && (b.email || b.phone)) {
+      await createUser(c, { tenantId: t.id, role: 'tenant_admin', full_name: b.contact_name || b.name, email: b.email, phone: b.phone, password: b.admin_password || null });
     }
     return t;
   });
@@ -151,6 +149,11 @@ router.patch('/gates/:id', h(async (req) => {
 router.delete('/gates/:id', h(async (req) => {
   await query('DELETE FROM gates WHERE id = $1', [intParam(req.params.id)]);
   return { ok: true };
+}));
+router.post('/gates/:id/open-all', h(async (req) => {
+  const g = await access.setOpenAll(req.user, intParam(req.params.id), String(req.body?.mode || ''));
+  await audit(req.user, 'gate_open_all', { gate_id: g.id, mode: req.body?.mode }, g.tenant_id);
+  return g;
 }));
 router.post('/gates/:id/open', h(async (req) => {
   const log = await access.manualOpen(req.user, intParam(req.params.id), req.body?.direction === 'out' ? 'out' : 'in');
@@ -226,12 +229,8 @@ router.post('/cameras/:id/command', h(async (req) => {
 // ---------- المستخدمون ----------
 router.post('/tenants/:id/users', h(async (req) => {
   const b = req.body || {};
-  const username = String(b.username || '').trim().toLowerCase();
-  if (!/^[a-z0-9._@-]{3,40}$/.test(username)) fail(400, 'اسم المستخدم: حروف إنجليزية وأرقام فقط');
-  if (!b.password || String(b.password).length < 8) fail(400, 'كلمة المرور 8 أحرف على الأقل');
   const role = b.role === 'tenant_guard' ? 'tenant_guard' : 'tenant_admin';
-  return one(`INSERT INTO users (tenant_id, username, full_name, phone, password_hash, role) VALUES ($1,$2,$3,$4,$5,$6)
-    RETURNING id, username, full_name, role, active`, [intParam(req.params.id), username, b.full_name || null, b.phone || null, hashPassword(b.password), role]);
+  return createUser(pool, { tenantId: intParam(req.params.id), role, full_name: b.full_name, email: b.email, phone: b.phone, password: b.password || null });
 }));
 router.get('/admins', h(() => many("SELECT id, username, full_name, active, last_login_at FROM users WHERE role = 'super_admin' ORDER BY id")));
 router.post('/admins', h(async (req) => {
@@ -264,6 +263,17 @@ router.delete('/users/:id', h(async (req) => {
 
 // ---------- سيارات مجمع (للاطلاع والدعم) ----------
 router.get('/tenants/:id/vehicles', h((req) => require('../services/vehicles').list(intParam(req.params.id), req.query)));
+// سيارات سُجلت بصورة/PDF فقط وتنتظر إدخال رقم اللوحة
+router.get('/vehicles/pending', h(() => many(`SELECT v.id, v.tenant_id, t.name AS tenant_name, v.document_type, v.document_name,
+    v.document_uploaded_at, v.created_at
+  FROM vehicles v JOIN tenants t ON t.id = v.tenant_id WHERE v.plate_key IS NULL ORDER BY v.created_at`)));
+router.patch('/vehicles/:id', h(async (req) => {
+  const v = await one('SELECT tenant_id FROM vehicles WHERE id = $1', [intParam(req.params.id)]);
+  if (!v) fail(404, 'السيارة غير موجودة');
+  const row = await require('../services/vehicles').update(v.tenant_id, intParam(req.params.id), { plate: req.body?.plate });
+  await audit(req.user, 'vehicle_plate_set', { plate: row.plate_key }, v.tenant_id);
+  return row;
+}));
 router.get('/vehicles/:id/document', h(async (req, res) => {
   const v = await one('SELECT document_path, document_type, document_name FROM vehicles WHERE id = $1', [intParam(req.params.id)]);
   await require('../services/documents').send(res, v);

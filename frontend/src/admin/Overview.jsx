@@ -5,6 +5,40 @@ import { useLive } from '../lib/realtime';
 import { fmtDate, fmtTime } from '../lib/format';
 import { Badge, Empty, PageHeader, Spinner, StatCard } from '../components/ui';
 import HourlyChart from '../components/HourlyChart';
+import { Icon, useAction } from '../components/ui';
+import { plateKey } from '../lib/plates';
+import { Plate } from '../components/ui';
+
+// سيارات سجلها العملاء بصورة/PDF فقط: تكتب الإدارة رقم اللوحة من الصورة
+function PendingPlates() {
+  const [rows, setRows] = useState(null);
+  const [vals, setVals] = useState({});
+  const [run, busy] = useAction();
+  const load = useCallback(() => api('/admin/vehicles/pending').then(setRows), []);
+  useEffect(() => { load(); }, [load]);
+  if (!rows?.length) return null;
+  const save = (id) => run(() => api(`/admin/vehicles/${id}`, { method: 'PATCH', body: { plate: vals[id] } }), 'تم حفظ رقم اللوحة').then((ok) => ok && load());
+  return (
+    <div className="card mb-4 overflow-hidden border-amber-300 dark:border-amber-500/40">
+      <div className="border-b border-slate-200 px-4 py-3 font-bold dark:border-ink-700">سيارات بانتظار إدخال رقم اللوحة ({rows.length})</div>
+      <ul className="divide-y divide-slate-100 dark:divide-ink-800">
+        {rows.map((v) => (
+          <li key={v.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+            <a href={`/api/admin/vehicles/${v.id}/document`} target="_blank" rel="noopener" className="shrink-0 overflow-hidden rounded-lg border border-slate-200 dark:border-ink-700">
+              {v.document_type === 'application/pdf'
+                ? <span className="flex h-12 w-16 items-center justify-center bg-rose-50 text-xs font-bold text-rose-600">PDF</span>
+                : <img src={`/api/admin/vehicles/${v.id}/document`} alt="" className="h-12 w-16 object-cover" />}
+            </a>
+            <div className="min-w-32 flex-1 text-sm"><div className="font-semibold">{v.tenant_name}</div><div className="text-xs text-slate-500">{fmtDate(v.created_at)}</div></div>
+            <input className="input w-44" placeholder="رقم اللوحة" value={vals[v.id] || ''} onChange={(e) => setVals({ ...vals, [v.id]: e.target.value })} />
+            {vals[v.id] && <Plate plateKey={plateKey(vals[v.id])} />}
+            <button type="button" className="btn-primary btn-sm" disabled={busy || !vals[v.id]} onClick={() => save(v.id)}><Icon name="plus" className="size-4" />حفظ</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export const EVENT_AR = {
   broker_connected: 'اتصل الخادم بوسيط MQTT',
@@ -55,6 +89,7 @@ export default function Overview() {
         <Link to="/system" className="text-sm font-semibold text-brand-700 dark:text-brand-500">التفاصيل</Link>
       </div>
 
+      <PendingPlates />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard icon="building" label="المجمعات (النشطة / الكل)" value={`${c.active_tenants} / ${c.tenants}`} />
         <StatCard icon="gate" label="البوابات المسجلة" value={c.gates} tone="blue" hint={`${c.cameras} كاميرا`} />

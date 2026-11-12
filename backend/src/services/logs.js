@@ -55,14 +55,14 @@ const fmt = new Intl.DateTimeFormat('en-GB', {
 function toCsv(rows, { withTenant = false } = {}) {
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const head = ['التاريخ والوقت', ...(withTenant ? ['المجمع'] : []), 'البوابة', 'الاتجاه', 'اللوحة', 'اللوحة (عربي)',
-    'صاحب السيارة', 'الوحدة', 'الحالة', 'السبب', 'المصدر'];
+    'الحالة', 'السبب', 'المصدر'];
   const lines = [head.map(esc).join(',')];
   for (const r of rows) {
     lines.push([
       fmt.format(new Date(r.occurred_at)), ...(withTenant ? [r.tenant_name] : []), r.gate_name,
       r.direction === 'in' ? 'دخول' : r.direction === 'out' ? 'خروج' : '',
       r.source === 'manual' ? 'فتح يدوي' : (r.plate_en || r.plate_raw), r.plate_ar,
-      r.owner_name, r.unit_number, r.decision === 'opened' ? 'تم الفتح' : 'مرفوض',
+      r.decision === 'opened' ? 'تم الفتح' : 'مرفوض',
       REASONS_AR[r.reason] || r.reason, r.source === 'manual' ? `يدوي - ${r.opened_by_name || ''}` : 'كاميرا',
     ].map(esc).join(','));
   }

@@ -55,6 +55,17 @@ const config = {
     paidStatuses: env('SALLA_PAID_STATUSES', 'paid,completed,delivered,in_progress').split(','),
   },
 
+  // البريد لإرسال رموز الدخول (اختياري — بدونه يكون الدخول بكلمة المرور فقط)
+  smtp: {
+    host: env('SMTP_HOST', ''),
+    port: Number(env('SMTP_PORT', 587)),
+    user: env('SMTP_USER', ''),
+    pass: env('SMTP_PASS', ''),
+    from: env('SMTP_FROM', ''),
+  },
+  // في التطوير: إظهار خيار الدخول بالرمز حتى بدون SMTP (الرمز يُطبع في سجل الخادم)
+  devLoginCodes: env('DEV_LOGIN_CODES', '0') === '1',
+
   seedAdmin: {
     username: env('ADMIN_USERNAME', 'admin'),
     password: env('ADMIN_PASSWORD', ''),

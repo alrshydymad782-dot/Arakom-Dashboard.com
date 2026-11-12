@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { fmtDate, fmtDateTime, randomPassword, timeAgo, DURATIONS, durationLabel, daysLeftText } from '../lib/format';
 import { Badge, Empty, Field, Icon, Modal, OnlineDot, PageHeader, Spinner, useAction } from '../components/ui';
+import OpenAllControl from '../components/OpenAllControl';
 
 export default function TenantDetail() {
   const { id } = useParams();
@@ -131,8 +132,9 @@ export default function TenantDetail() {
                     );
                   })}
                 </div>
+                <div className="mt-3"><OpenAllControl gate={g} base="/admin" compact onChange={load} /></div>
                 <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                  <span>ريليه رقم {g.relay_id} · الفتح التلقائي {g.auto_open ? 'مفعل' : 'معطل'}</span>
+                  <span>ريليه رقم {g.relay_id}</span>
                   <span className="flex gap-1">
                     <button type="button" className="btn-ghost btn-sm" onClick={() => run(() => api(`/admin/gates/${g.id}/open`, { body: { direction: 'in' } }), 'تم إرسال أمر الفتح')}>فتح الدخول</button>
                     <button type="button" className="btn-ghost btn-sm" onClick={() => run(() => api(`/admin/gates/${g.id}/open`, { body: { direction: 'out' } }), 'تم إرسال أمر الفتح')}>فتح الخروج</button>
@@ -148,18 +150,19 @@ export default function TenantDetail() {
         <section className="card p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-bold">حسابات الدخول</h2>
-            <button type="button" className="btn-ghost btn-sm" onClick={() => setModal({ type: 'user', data: { username: '', full_name: '', password: randomPassword(), role: 'tenant_admin' } })}><Icon name="plus" className="size-4" />حساب</button>
+            <button type="button" className="btn-ghost btn-sm" onClick={() => setModal({ type: 'user', data: { email: '', phone: '', full_name: '', password: randomPassword(), role: 'tenant_admin' } })}><Icon name="plus" className="size-4" />حساب</button>
           </div>
           {!d.users.length ? <Empty>لا توجد حسابات</Empty> : (
             <ul className="divide-y divide-slate-100 dark:divide-ink-800">
               {d.users.map((u) => (
                 <li key={u.id} className="flex items-center gap-2 py-2.5 text-sm">
                   <div className="min-w-0 flex-1">
-                    <div className="font-semibold" dir="ltr" style={{ textAlign: 'right' }}>{u.username}</div>
+                    <div className="font-semibold" dir="ltr" style={{ textAlign: 'right' }}>{u.email || u.phone || u.username}</div>
+                    {u.email && u.phone && <div className="text-xs text-slate-500" dir="ltr" style={{ textAlign: 'right' }}>{u.phone}</div>}
                     <div className="text-xs text-slate-500">{u.role === 'tenant_admin' ? 'مدير' : 'حارس'} · {u.last_login_at ? `آخر دخول ${timeAgo(u.last_login_at)}` : 'لم يدخل بعد'}</div>
                   </div>
                   <Badge tone={u.active ? 'green' : 'gray'}>{u.active ? 'نشط' : 'موقوف'}</Badge>
-                  <button type="button" className="btn-ghost btn-sm" onClick={() => setModal({ type: 'reset', data: { id: u.id, username: u.username, password: randomPassword() } })}>كلمة مرور</button>
+                  <button type="button" className="btn-ghost btn-sm" onClick={() => setModal({ type: 'reset', data: { id: u.id, username: u.email || u.phone || u.username, password: randomPassword() } })}>كلمة مرور</button>
                   <button type="button" className="btn-ghost btn-sm" onClick={() => run(() => api(`/admin/users/${u.id}`, { method: 'PATCH', body: { active: !u.active } })).then(load)}>{u.active ? 'إيقاف' : 'تفعيل'}</button>
                 </li>
               ))}
@@ -217,8 +220,9 @@ export default function TenantDetail() {
             </>}
             {modal.type === 'user' && <>
               <Field label="الاسم"><input className="input" value={form.full_name} onChange={setF('full_name')} /></Field>
-              <Field label="اسم المستخدم"><input className="input" dir="ltr" required value={form.username} onChange={setF('username')} /></Field>
-              <Field label="كلمة المرور"><input className="input" dir="ltr" required minLength={8} value={form.password} onChange={setF('password')} /></Field>
+              <Field label="البريد الإلكتروني"><input className="input" dir="ltr" type="email" value={form.email} onChange={setF('email')} /></Field>
+              <Field label="رقم الجوال"><input className="input" dir="ltr" type="tel" value={form.phone} onChange={setF('phone')} /></Field>
+              <Field label="كلمة المرور (اختيارية إن وُجد بريد)"><input className="input" dir="ltr" minLength={8} value={form.password} onChange={setF('password')} /></Field>
               <Field label="الصلاحية"><select className="input" value={form.role} onChange={setF('role')}><option value="tenant_admin">مدير المجمع</option><option value="tenant_guard">حارس</option></select></Field>
             </>}
             {modal.type === 'reset' && <Field label={`كلمة المرور الجديدة لـ ${form.username}`}><input className="input" dir="ltr" required minLength={8} value={form.password} onChange={setF('password')} /></Field>}

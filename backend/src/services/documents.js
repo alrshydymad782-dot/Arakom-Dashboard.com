@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const config = require('../config');
-const { one } = require('../db');
+const { one, tx } = require('../db');
+const { parsePlate } = require('./plates');
 const { fail } = require('../http');
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -51,7 +52,44 @@ async function save(tenantId, vehicleId, buf, originalName) {
   return row;
 }
 
+// تسجيل سيارة جديدة مع مستندها في خطوة واحدة (رقم اللوحة اختياري)
+async function createWithDocument(tenantId, buf, originalName, plateText) {
+  if (!Buffer.isBuffer(buf) || !buf.length) fail(400, 'لم يتم إرسال ملف');
+  if (buf.length > MAX_BYTES) fail(413, 'حجم الملف أكبر من 5 ميجابايت');
+  const type = sniff(buf);
+  if (!type) fail(400, 'الملف يجب أن يكون صورة (JPG / PNG / WEBP) أو PDF');
+
+  let plate = null;
+  if (String(plateText || '').trim()) {
+    plate = parsePlate(plateText);
+    if (!plate.key || plate.key.length < 2) fail(400, 'رقم اللوحة غير صحيح');
+  }
+  const rel = `${tenantId}/new-${crypto.randomBytes(8).toString('hex')}.${EXT[type]}`;
+  fs.mkdirSync(path.join(DOCS_DIR, String(tenantId)), { recursive: true });
+  fs.writeFileSync(absPath(rel), buf);
+  const name = String(originalName || `plate.${EXT[type]}`).replace(/[\\/\0\r\n]/g, '_').slice(0, 120);
+  try {
+    return await tx(async (c) => {
+      await c.query('SELECT 1 FROM tenants WHERE id = $1 FOR UPDATE', [tenantId]);
+      const lim = (await c.query(`SELECT s.max_vehicles, (SELECT COUNT(*)::int FROM vehicles WHERE tenant_id = $1) AS used
+        FROM tenants t LEFT JOIN subscriptions s ON s.tenant_id = t.id WHERE t.id = $1`, [tenantId])).rows[0];
+      if (lim?.max_vehicles != null && lim.used >= lim.max_vehicles) fail(409, `وصلت للحد الأقصى من السيارات (${lim.max_vehicles})`);
+      const r = await c.query(`INSERT INTO vehicles (tenant_id, plate_key, plate_ar, plate_en, document_path, document_type, document_name,
+          document_size, document_uploaded_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now()) RETURNING *`,
+      [tenantId, plate?.key ?? null, plate?.displayAr || null, plate?.display || null, rel, type, name, buf.length]);
+      return r.rows[0];
+    });
+  } catch (e) {
+    removeFile(rel);
+    if (e.code === '23505') fail(409, 'هذه اللوحة مسجلة مسبقاً');
+    throw e;
+  }
+}
+
 async function remove(tenantId, vehicleId) {
+  const cur = await one('SELECT plate_key FROM vehicles WHERE id = $1 AND tenant_id = $2', [vehicleId, tenantId]);
+  if (!cur) fail(404, 'السيارة غير موجودة');
+  if (!cur.plate_key) fail(400, 'لا يمكن حذف المستند قبل إدخال رقم اللوحة. احذف السيارة بدلاً من ذلك');
   const v = await one(`UPDATE vehicles v SET document_path = NULL, document_type = NULL, document_name = NULL, document_size = NULL,
       document_uploaded_at = NULL FROM (SELECT document_path AS old FROM vehicles WHERE id = $1 AND tenant_id = $2) o
     WHERE v.id = $1 AND v.tenant_id = $2 RETURNING o.old`, [vehicleId, tenantId]);
@@ -72,4 +110,4 @@ async function send(res, vehicle) {
   fs.createReadStream(p).pipe(res);
 }
 
-module.exports = { save, remove, send, removeFile, MAX_BYTES, sniff };
+module.exports = { save, remove, send, removeFile, createWithDocument, MAX_BYTES, sniff };

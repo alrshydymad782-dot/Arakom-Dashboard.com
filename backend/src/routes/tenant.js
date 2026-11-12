@@ -1,7 +1,8 @@
 'use strict';
 // مسارات لوحة تحكم العميل/المجمع (app.arakom.sa)
 const express = require('express');
-const { one, many, query, audit } = require('../db');
+const { one, many, query, audit, pool } = require('../db');
+const { createUser } = require('../services/users');
 const { h, fail, requireRole, intParam } = require('../http');
 const vehicles = require('../services/vehicles');
 const logs = require('../services/logs');
@@ -29,7 +30,7 @@ router.get('/dashboard', h(async (req) => {
 }));
 
 async function gatesWithCameras(tenantId) {
-  return many(`SELECT g.id, g.code, g.name, g.auto_open, g.relay_id,
+  return many(`SELECT g.id, g.code, g.name, g.auto_open, g.relay_id, g.open_all_always, g.open_all_until,
       (SELECT json_agg(json_build_object('id', c.id, 'sn', c.sn, 'direction', c.direction, 'is_online', c.is_online,
           'last_seen_at', c.last_seen_at) ORDER BY c.direction) FROM cameras c WHERE c.gate_id = g.id) AS cameras
     FROM gates g WHERE g.tenant_id = $1 ORDER BY g.id`, [tenantId]);
@@ -44,6 +45,14 @@ router.post('/gates/:id/open', h(async (req) => {
   const log = await access.manualOpen(req.user, gate.id, direction);
   await audit(req.user, 'gate_manual_open', { gate_id: gate.id, direction });
   return { ok: true, log };
+}));
+
+// فتح البوابة لأي سيارة: ساعة / 6 ساعات / 12 ساعة / دائماً 24/7 ، أو إيقاف
+router.post('/gates/:id/open-all', h(async (req) => {
+  const mode = String(req.body?.mode || '');
+  const g = await access.setOpenAll(req.user, intParam(req.params.id), mode, tid(req));
+  await audit(req.user, 'gate_open_all', { gate_id: g.id, mode });
+  return { id: g.id, open_all_always: g.open_all_always, open_all_until: g.open_all_until };
 }));
 
 // تشغيل/إيقاف الفتح التلقائي للبوابة
@@ -92,6 +101,15 @@ router.put('/vehicles/:id/document', adminOnly,
     await audit(req.user, 'vehicle_document_upload', { plate: v.plate_key, type: v.document_type });
     return v;
   }));
+// تسجيل سيارة برفع صورة أو PDF للوحة (رقم اللوحة اختياري ويمكن إضافته لاحقاً)
+router.post('/vehicles/with-document', adminOnly,
+  express.raw({ type: () => true, limit: documents.MAX_BYTES + 1024 }),
+  h(async (req) => {
+    const dec = (v) => { try { return decodeURIComponent(v || ''); } catch { return ''; } };
+    const v = await documents.createWithDocument(tid(req), req.body, dec(req.get('x-file-name')), dec(req.get('x-plate')));
+    await audit(req.user, 'vehicle_add_document', { plate: v.plate_key, type: v.document_type });
+    return v;
+  }));
 router.get('/vehicles/:id/document', h(async (req, res) => {
   const v = await one('SELECT document_path, document_type, document_name FROM vehicles WHERE id = $1 AND tenant_id = $2', [intParam(req.params.id), tid(req)]);
   await documents.send(res, v);
@@ -120,17 +138,13 @@ router.get('/logs/export.csv', h(async (req, res) => {
 router.get('/logs/report', h(async (req) => ({ rows: await logs.exportRows(req.query, tid(req)), tenant_name: req.user.tenant_name })));
 
 // ---------- حسابات موظفي المجمع (الحراس) ----------
-router.get('/users', adminOnly, h((req) => many(`SELECT id, username, full_name, phone, role, active, last_login_at, created_at
+router.get('/users', adminOnly, h((req) => many(`SELECT id, username, full_name, email, phone, role, active, last_login_at, created_at
   FROM users WHERE tenant_id = $1 ORDER BY id`, [tid(req)])));
 router.post('/users', adminOnly, h(async (req) => {
   const b = req.body || {};
-  const username = String(b.username || '').trim().toLowerCase();
-  if (!/^[a-z0-9._@-]{3,40}$/.test(username)) fail(400, 'اسم المستخدم: حروف إنجليزية وأرقام فقط (3 أحرف على الأقل)');
-  if (!b.password || String(b.password).length < 8) fail(400, 'كلمة المرور 8 أحرف على الأقل');
   const role = b.role === 'tenant_admin' ? 'tenant_admin' : 'tenant_guard';
-  const u = await one(`INSERT INTO users (tenant_id, username, full_name, phone, password_hash, role) VALUES ($1,$2,$3,$4,$5,$6)
-    RETURNING id, username, full_name, role, active`, [tid(req), username, b.full_name || null, b.phone || null, hashPassword(b.password), role]);
-  await audit(req.user, 'user_add', { username, role });
+  const u = await createUser(pool, { tenantId: tid(req), role, full_name: b.full_name, email: b.email, phone: b.phone, password: b.password || null });
+  await audit(req.user, 'user_add', { email: u.email, phone: u.phone, role });
   return u;
 }));
 router.patch('/users/:id', adminOnly, h(async (req) => {

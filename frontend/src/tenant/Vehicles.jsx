@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { readSheet } from 'read-excel-file/browser';
 import { api, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { plateKey } from '../lib/plates';
-import { fmtDate, timeAgo } from '../lib/format';
-import { Badge, Empty, Field, Icon, Modal, PageHeader, Plate, Spinner, Tabs, useAction, useToast } from '../components/ui';
+import { timeAgo } from '../lib/format';
+import { Badge, Empty, Icon, Modal, PageHeader, Plate, Spinner, useAction, useToast } from '../components/ui';
 
+/*
+ * السيارات المسموح لها: تُسجَّل السيارة بإحدى طريقتين فقط
+ *   1) كتابة رقم اللوحة يدوياً
+ *   2) رفع صورة أو PDF للوحة (ويمكن كتابة الرقم معها أو لاحقاً)
+ */
 const DOC_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 const MAX_DOC = 5 * 1024 * 1024;
 const docUrl = (v) => `/api/tenant/vehicles/${v.id}/document?t=${encodeURIComponent(v.document_uploaded_at || '')}`;
 
-async function uploadDocument(vehicleId, file) {
-  const res = await fetch(`/api/tenant/vehicles/${vehicleId}/document`, {
-    method: 'PUT',
-    headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name) },
+async function sendFile(url, method, file, headers = {}) {
+  const res = await fetch(url, {
+    method,
+    headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-File-Name': encodeURIComponent(file.name), ...headers },
     body: file,
     credentials: 'same-origin',
   });
@@ -22,307 +26,145 @@ async function uploadDocument(vehicleId, file) {
   return data;
 }
 
-// أيقونة المستند في القائمة: صورة مصغرة أو شارة PDF
-function DocBadge({ v }) {
-  if (!v.document_path) return <span className="text-xs text-slate-400">—</span>;
+function DocThumb({ v }) {
+  if (!v.document_path) return null;
   return (
-    <a href={docUrl(v)} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title={v.document_name}
-      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-0.5 pe-2 text-xs font-semibold hover:border-brand-500 dark:border-ink-700 dark:bg-ink-800">
+    <a href={docUrl(v)} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title="عرض صورة اللوحة"
+      className="shrink-0 overflow-hidden rounded-lg border border-slate-200 hover:border-brand-500 dark:border-ink-700">
       {v.document_type === 'application/pdf'
-        ? <span className="flex h-8 w-8 items-center justify-center rounded-md bg-rose-50 text-[10px] font-bold text-rose-600 dark:bg-rose-500/15">PDF</span>
-        : <img src={docUrl(v)} alt="" className="h-8 w-8 rounded-md object-cover" loading="lazy" />}
-      عرض
+        ? <span className="flex h-11 w-14 items-center justify-center bg-rose-50 text-xs font-bold text-rose-600 dark:bg-rose-500/15">PDF</span>
+        : <img src={docUrl(v)} alt="صورة اللوحة" className="h-11 w-14 object-cover" loading="lazy" />}
     </a>
   );
-}
-
-const BLANK = { plate: '', owner_name: '', unit_number: '', phone: '', car_make: '', car_color: '', status: 'active', valid_until: '', notes: '' };
-
-// أسماء الأعمدة المقبولة في ملف الاستيراد (عربي أو إنجليزي)
-const COLUMNS = {
-  plate: ['plate', 'رقم اللوحة', 'اللوحة', 'plate number'],
-  owner_name: ['owner_name', 'owner', 'اسم صاحب السيارة', 'اسم المالك', 'الاسم', 'name'],
-  unit_number: ['unit_number', 'unit', 'apartment', 'رقم الشقة', 'الوحدة', 'رقم الوحدة', 'الشقة'],
-  phone: ['phone', 'mobile', 'رقم التواصل', 'الجوال', 'رقم الجوال'],
-  car_make: ['car_make', 'make', 'type', 'نوع السيارة', 'النوع'],
-  car_color: ['car_color', 'color', 'لون السيارة', 'اللون'],
-  status: ['status', 'الحالة'],
-};
-
-function mapRows(matrix) {
-  const [head, ...rest] = matrix;
-  const idx = {};
-  head.forEach((h, i) => {
-    const name = String(h ?? '').trim().toLowerCase();
-    for (const [k, aliases] of Object.entries(COLUMNS)) if (aliases.includes(name)) idx[k] = i;
-  });
-  if (idx.plate === undefined) throw new Error('لم يتم العثور على عمود "رقم اللوحة" في الملف');
-  return rest.filter((r) => r.some((c) => c !== null && String(c).trim() !== '')).map((r) => {
-    const o = {};
-    for (const [k, i] of Object.entries(idx)) o[k] = r[i] == null ? '' : String(r[i]).trim();
-    if (o.status) o.status = /محظور|block/i.test(o.status) ? 'blocked' : 'active';
-    return o;
-  });
-}
-
-function parseCsv(text) {
-  const rows = [];
-  let row = [], cur = '', q = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (q) {
-      if (c === '"' && text[i + 1] === '"') { cur += '"'; i++; } else if (c === '"') q = false; else cur += c;
-    } else if (c === '"') q = true;
-    else if (c === ',' || c === ';' || c === '\t') { row.push(cur); cur = ''; }
-    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
-    else cur += c;
-  }
-  if (cur || row.length) { row.push(cur); rows.push(row); }
-  return rows;
 }
 
 export default function Vehicles() {
   const { user } = useAuth();
   const canEdit = user.role === 'tenant_admin';
+  const toast = useToast();
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState('');
-  const [edit, setEdit] = useState(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const [file, setFile] = useState(null);
-  const filePreview = useMemo(() => (file && file.type !== 'application/pdf' ? URL.createObjectURL(file) : null), [file]);
-  useEffect(() => () => { if (filePreview) URL.revokeObjectURL(filePreview); }, [filePreview]);
+  const [form, setForm] = useState(null); // { id?, plate, file, document_path... }
   const [run, busy] = useAction();
-  const toast = useToast();
 
-  const load = useCallback(() => api(`/tenant/vehicles${qs({ q, status })}`).then(setData), [q, status]);
+  const load = useCallback(() => api(`/tenant/vehicles${qs({ q })}`).then(setData), [q]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
-  const save = async (e) => {
-    e.preventDefault();
-    const { document_path: _p, document_type: _t, document_name: _n, document_size: _s, document_uploaded_at: _u, last_seen_at: _l, ...body } = edit;
-    const ok = await run(async () => {
-      const v = edit.id ? await api(`/tenant/vehicles/${edit.id}`, { method: 'PATCH', body }) : await api('/tenant/vehicles', { body });
-      if (file) await uploadDocument(v.id, file);
-      return v;
-    }, file ? 'تم الحفظ ورفع المستند' : 'تم الحفظ');
-    if (ok) { setEdit(null); setFile(null); load(); }
-  };
+  const preview = useMemo(() => (form?.plate ? plateKey(form.plate) : ''), [form?.plate]);
+  const filePreview = useMemo(() => (form?.file && form.file.type !== 'application/pdf' ? URL.createObjectURL(form.file) : null), [form?.file]);
+  useEffect(() => () => { if (filePreview) URL.revokeObjectURL(filePreview); }, [filePreview]);
+
   const pickFile = (e) => {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
-    if (!DOC_TYPES.includes(f.type)) return toast('الملف يجب أن يكون صورة (JPG / PNG / WEBP) أو PDF', 'err');
+    if (!DOC_TYPES.includes(f.type)) return toast('الملف يجب أن يكون صورة (JPG / PNG) أو PDF', 'err');
     if (f.size > MAX_DOC) return toast('حجم الملف أكبر من 5 ميجابايت', 'err');
-    setFile(f);
+    setForm({ ...form, file: f });
   };
-  const removeDoc = async () => {
-    if (!window.confirm('حذف المستند المرفق؟')) return;
-    if (await run(() => api(`/tenant/vehicles/${edit.id}/document`, { method: 'DELETE' }), 'تم حذف المستند')) {
-      setEdit({ ...edit, document_path: null }); load();
-    }
+
+  const save = async (e) => {
+    e.preventDefault();
+    const plate = form.plate.trim();
+    if (!plate && !form.file && !form.document_path) return toast('اكتب رقم اللوحة أو ارفع صورة أو PDF للوحة', 'err');
+    const ok = await run(async () => {
+      if (form.id) {
+        if (plate) await api(`/tenant/vehicles/${form.id}`, { method: 'PATCH', body: { plate } });
+        if (form.file) await sendFile(`/api/tenant/vehicles/${form.id}/document`, 'PUT', form.file);
+      } else if (form.file) {
+        await sendFile('/api/tenant/vehicles/with-document', 'POST', form.file, { 'X-Plate': encodeURIComponent(plate) });
+      } else {
+        await api('/tenant/vehicles', { body: { plate } });
+      }
+      return true;
+    }, 'تم الحفظ');
+    if (ok) { setForm(null); load(); }
   };
-  const openEdit = (v) => { setFile(null); setEdit(v); };
+
   const remove = async () => {
     if (!window.confirm('حذف هذه السيارة من القائمة؟')) return;
-    if (await run(() => api(`/tenant/vehicles/${edit.id}`, { method: 'DELETE' }), 'تم الحذف')) { setEdit(null); load(); }
+    if (await run(() => api(`/tenant/vehicles/${form.id}`, { method: 'DELETE' }), 'تم الحذف')) { setForm(null); load(); }
   };
-  const toggleBlock = (v) => run(() => api(`/tenant/vehicles/${v.id}`, { method: 'PATCH', body: { status: v.status === 'active' ? 'blocked' : 'active' } }),
-    v.status === 'active' ? 'تم حظر السيارة' : 'تم تفعيل السيارة').then(load);
 
-  const preview = useMemo(() => (edit?.plate ? plateKey(edit.plate) : ''), [edit?.plate]);
-  const set = (k) => (e) => setEdit({ ...edit, [k]: e.target.value });
+  const openForm = (v) => setForm(v
+    ? { id: v.id, plate: v.plate_key ? (v.plate_en || v.plate_key) : '', file: null, document_path: v.document_path, document_type: v.document_type, document_uploaded_at: v.document_uploaded_at, plate_key: v.plate_key }
+    : { plate: '', file: null });
+
+  const pending = data?.rows.filter((v) => !v.plate_key).length || 0;
 
   return (
     <>
-      <PageHeader title="السيارات المسموح لها" subtitle={data ? (data.max_vehicles ? `${data.rows.length} من ${data.max_vehicles} سيارة مسموحة في اشتراكك` : `${data.rows.length} سيارة مسجلة`) : ''}
-        actions={canEdit && <>
-          <button type="button" className="btn-ghost" onClick={() => setImportOpen(true)}><Icon name="upload" className="size-4" />استيراد CSV / Excel</button>
-          <button type="button" className="btn-primary" onClick={() => openEdit({ ...BLANK })}><Icon name="plus" className="size-4" />إضافة سيارة</button>
-        </>} />
+      <PageHeader title="السيارات المسموح لها"
+        subtitle={data ? `${data.rows.length} سيارة${data.max_vehicles ? ` من ${data.max_vehicles}` : ''}` : ''}
+        actions={canEdit && <button type="button" className="btn-primary" onClick={() => openForm(null)}><Icon name="plus" className="size-4" />إضافة سيارة</button>} />
 
-      <div className="mb-4 flex flex-wrap gap-3">
-        <div className="relative min-w-60 flex-1">
-          <Icon name="search" className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-slate-400" />
-          <input className="input ps-9" placeholder="ابحث برقم اللوحة أو الاسم أو الوحدة أو الجوال" value={q} onChange={(e) => setQ(e.target.value)} />
+      {pending > 0 && (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          {pending} سيارة سُجلت بصورة فقط وتنتظر إدخال رقم اللوحة. لن تُفتح لها البوابة حتى يُكتب الرقم (يمكنك كتابته، أو تكتبه إدارة أراكم من الصورة).
         </div>
-        <Tabs value={status} onChange={setStatus} items={[['', 'الكل'], ['active', 'نشط'], ['blocked', 'محظور']]} />
+      )}
+
+      <div className="relative mb-4">
+        <Icon name="search" className="pointer-events-none absolute inset-y-0 start-3 my-auto size-4 text-slate-400" />
+        <input className="input ps-9" placeholder="ابحث برقم اللوحة" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
 
       <div className="card overflow-hidden">
-        {!data ? <Spinner /> : !data.rows.length ? <Empty>لا توجد سيارات. أضف سيارات السكان ليتم فتح البوابة لهم تلقائياً.</Empty> : (
-          <>
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full">
-                <thead className="bg-slate-50 dark:bg-ink-800/60"><tr>
-                  <th className="th">اللوحة</th><th className="th">صاحب السيارة</th><th className="th">الوحدة</th><th className="th">التواصل</th>
-                  <th className="th">السيارة</th><th className="th">المستند</th><th className="th">الحالة</th><th className="th">آخر حركة</th><th className="th" />
-                </tr></thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-ink-800">
-                  {data.rows.map((v) => (
-                    <tr key={v.id}>
-                      <td className="td"><Plate plateKey={v.plate_key} /></td>
-                      <td className="td font-medium">{v.owner_name || '—'}</td>
-                      <td className="td">{v.unit_number || '—'}</td>
-                      <td className="td" dir="ltr">{v.phone || '—'}</td>
-                      <td className="td">{[v.car_make, v.car_color].filter(Boolean).join(' · ') || '—'}</td>
-                      <td className="td"><DocBadge v={v} /></td>
-                      <td className="td">
-                        <Badge tone={v.status === 'active' ? 'green' : 'red'}>{v.status === 'active' ? 'نشط' : 'محظور'}</Badge>
-                        {v.valid_until && <div className="mt-1 text-[11px] text-slate-500">حتى {fmtDate(v.valid_until)}</div>}
-                      </td>
-                      <td className="td text-slate-500">{v.last_seen_at ? timeAgo(v.last_seen_at) : '—'}</td>
-                      <td className="td">{canEdit && <div className="flex gap-1">
-                        <button type="button" className="btn-ghost btn-sm" onClick={() => toggleBlock(v)}>{v.status === 'active' ? 'حظر' : 'تفعيل'}</button>
-                        <button type="button" className="btn-ghost btn-sm" onClick={() => openEdit({ ...BLANK, ...v, plate: v.plate_en || v.plate_key, valid_until: v.valid_until || '' })}><Icon name="edit" className="size-4" /></button>
-                      </div>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <ul className="divide-y divide-slate-100 md:hidden dark:divide-ink-800">
-              {data.rows.map((v) => (
-                <li key={v.id} className="flex items-center gap-3 px-4 py-3" onClick={() => canEdit && openEdit({ ...BLANK, ...v, plate: v.plate_en || v.plate_key, valid_until: v.valid_until || '' })}>
-                  <Plate plateKey={v.plate_key} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-semibold">{v.owner_name || 'بدون اسم'}</div>
-                    <div className="truncate text-xs text-slate-500">{[v.unit_number && `وحدة ${v.unit_number}`, v.car_make, v.car_color].filter(Boolean).join(' · ')}</div>
-                  </div>
-                  {v.document_path && <DocBadge v={v} />}
-                  <Badge tone={v.status === 'active' ? 'green' : 'red'}>{v.status === 'active' ? 'نشط' : 'محظور'}</Badge>
-                </li>
-              ))}
-            </ul>
-          </>
+        {!data ? <Spinner /> : !data.rows.length ? <Empty>لا توجد سيارات بعد. أضف سيارات السكان لتُفتح لهم البوابة تلقائياً.</Empty> : (
+          <ul className="divide-y divide-slate-100 dark:divide-ink-800">
+            {data.rows.map((v) => (
+              <li key={v.id} className={`flex items-center gap-3 px-4 py-3 ${canEdit ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-ink-800/50' : ''}`}
+                onClick={() => canEdit && openForm(v)}>
+                {v.plate_key ? <Plate plateKey={v.plate_key} /> : <Badge tone="amber">بانتظار رقم اللوحة</Badge>}
+                <div className="min-w-0 flex-1 text-xs text-slate-500 dark:text-slate-400">
+                  {v.last_seen_at ? `آخر دخول ${timeAgo(v.last_seen_at)}` : 'لم تُرصد بعد'}
+                </div>
+                <DocThumb v={v} />
+                {canEdit && <Icon name="edit" className="size-4 shrink-0 text-slate-400" />}
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 
-      <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? 'تعديل بيانات السيارة' : 'إضافة سيارة'}>
-        {edit && (
-          <form onSubmit={save} className="grid grid-cols-2 gap-3">
-            <Field label="رقم اللوحة (عربي أو إنجليزي) *" className="col-span-2">
-              <input className="input" required value={edit.plate} onChange={set('plate')} placeholder="مثال: 1234 ABJ أو ح ب ا ١٢٣٤" />
-            </Field>
-            {preview && <div className="col-span-2 flex items-center gap-3 rounded-xl bg-slate-50 p-3 dark:bg-ink-800">
-              <Plate plateKey={preview} size="lg" /><span className="text-xs text-slate-500">تأكد أن اللوحة تطابق لوحة السيارة الفعلية</span>
-            </div>}
-            <Field label="اسم صاحب السيارة" className="col-span-2"><input className="input" value={edit.owner_name ?? ''} onChange={set('owner_name')} /></Field>
-            <Field label="رقم الشقة / الوحدة"><input className="input" value={edit.unit_number ?? ''} onChange={set('unit_number')} /></Field>
-            <Field label="رقم التواصل"><input className="input" dir="ltr" type="tel" value={edit.phone ?? ''} onChange={set('phone')} /></Field>
-            <Field label="نوع السيارة"><input className="input" value={edit.car_make ?? ''} onChange={set('car_make')} placeholder="تويوتا كامري" /></Field>
-            <Field label="لون السيارة"><input className="input" value={edit.car_color ?? ''} onChange={set('car_color')} /></Field>
-            <Field label="الحالة">
-              <select className="input" value={edit.status} onChange={set('status')}><option value="active">نشط (مسموح)</option><option value="blocked">محظور</option></select>
-            </Field>
-            <Field label="صالح حتى (اختياري)"><input className="input" type="date" value={edit.valid_until ?? ''} onChange={set('valid_until')} /></Field>
-            <Field label="ملاحظات" className="col-span-2"><input className="input" value={edit.notes ?? ''} onChange={set('notes')} /></Field>
-            <div className="col-span-2">
-              <span className="label">صورة اللوحة أو الاستمارة (صورة أو PDF — حتى 5 ميجابايت)</span>
-              <div className="rounded-xl border-2 border-dashed border-slate-300 p-3 dark:border-ink-700">
-                {edit.document_path && !file && (
-                  <div className="mb-2 flex items-center gap-2 text-sm">
-                    <DocBadge v={edit} /><span className="min-w-0 flex-1 truncate text-slate-500">{edit.document_name}</span>
-                    <button type="button" className="btn-ghost btn-sm text-rose-600" onClick={removeDoc}><Icon name="trash" className="size-4" /></button>
-                  </div>
-                )}
-                {file && (
-                  <div className="mb-2 flex items-center gap-2 text-sm">
-                    {file.type === 'application/pdf'
-                      ? <span className="flex h-10 w-10 items-center justify-center rounded-md bg-rose-50 text-xs font-bold text-rose-600">PDF</span>
-                      : <img src={filePreview} alt="" className="h-10 w-10 rounded-md object-cover" />}
-                    <span className="min-w-0 flex-1 truncate">{file.name} <span className="text-slate-500">({(file.size / 1024).toFixed(0)} KB)</span></span>
-                    <button type="button" className="btn-ghost btn-sm" onClick={() => setFile(null)}><Icon name="x" className="size-4" /></button>
-                  </div>
-                )}
-                <label className="btn-ghost btn-sm cursor-pointer">
-                  <Icon name="upload" className="size-4" />{edit.document_path || file ? 'استبدال الملف' : 'اختيار صورة أو PDF'}
-                  <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={pickFile} />
-                </label>
-              </div>
+      <Modal open={!!form} onClose={() => setForm(null)} title={form?.id ? 'تعديل السيارة' : 'إضافة سيارة'}>
+        {form && (
+          <form onSubmit={save} className="grid gap-4">
+            <div>
+              <span className="label">1) اكتب رقم اللوحة</span>
+              <input className="input text-lg" value={form.plate} onChange={(e) => setForm({ ...form, plate: e.target.value })} placeholder="مثال: 1234 ABJ أو ح ب ا ١٢٣٤" />
+              {preview && <div className="mt-2 flex justify-center rounded-xl bg-slate-50 p-3 dark:bg-ink-800"><Plate plateKey={preview} size="lg" /></div>}
             </div>
-            <div className="col-span-2 mt-2 flex gap-2">
-              {edit.id && <button type="button" className="btn-ghost text-rose-600" onClick={remove}><Icon name="trash" className="size-4" />حذف</button>}
+
+            <div className="flex items-center gap-3 text-xs text-slate-400"><span className="h-px flex-1 bg-slate-200 dark:bg-ink-700" />أو / و<span className="h-px flex-1 bg-slate-200 dark:bg-ink-700" /></div>
+
+            <div>
+              <span className="label">2) ارفع صورة أو PDF للوحة (حتى 5 ميجابايت)</span>
+              <label className="flex cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed border-slate-300 p-3 hover:border-brand-500 dark:border-ink-700">
+                {form.file ? (
+                  form.file.type === 'application/pdf'
+                    ? <span className="flex h-14 w-16 items-center justify-center rounded-lg bg-rose-50 text-sm font-bold text-rose-600">PDF</span>
+                    : <img src={filePreview} alt="" className="h-14 w-16 rounded-lg object-cover" />
+                ) : form.document_path ? <DocThumb v={form} /> : (
+                  <span className="flex h-14 w-16 items-center justify-center rounded-lg bg-slate-100 text-slate-400 dark:bg-ink-800"><Icon name="upload" /></span>
+                )}
+                <span className="min-w-0 flex-1 text-sm">
+                  {form.file ? <><b className="block truncate">{form.file.name}</b><span className="text-xs text-slate-500">اضغط للاستبدال</span></>
+                    : form.document_path ? 'اضغط لاستبدال الملف المرفق' : 'اضغط لاختيار صورة أو PDF (أو التقاط صورة بالكاميرا)'}
+                </span>
+                <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={pickFile} />
+              </label>
+            </div>
+
+            <div className="mt-1 flex gap-2">
+              {form.id && <button type="button" className="btn-ghost text-rose-600" onClick={remove}><Icon name="trash" className="size-4" />حذف</button>}
               <div className="flex-1" />
-              <button type="button" className="btn-ghost" onClick={() => setEdit(null)}>إلغاء</button>
-              <button className="btn-primary" disabled={busy}>حفظ</button>
+              <button type="button" className="btn-ghost" onClick={() => setForm(null)}>إلغاء</button>
+              <button className="btn-primary" disabled={busy}>{busy ? 'جاري الحفظ...' : 'حفظ'}</button>
             </div>
           </form>
         )}
       </Modal>
-
-      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
     </>
-  );
-}
-
-function ImportModal({ open, onClose, onDone }) {
-  const [rows, setRows] = useState(null);
-  const [error, setError] = useState('');
-  const [result, setResult] = useState(null);
-  const [run, busy] = useAction();
-
-  const reset = () => { setRows(null); setError(''); setResult(null); };
-  const close = () => { reset(); onClose(); };
-
-  const onFile = async (e) => {
-    reset();
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const matrix = /\.xlsx$/i.test(file.name) ? await readSheet(file) : parseCsv(await file.text());
-      setRows(mapRows(matrix));
-    } catch (err) {
-      setError(err.message || 'تعذر قراءة الملف');
-    }
-  };
-
-  const upload = async () => {
-    const r = await run(() => api('/tenant/vehicles/import', { body: { rows } }));
-    if (r) { setResult(r); onDone(); }
-  };
-
-  const template = () => {
-    const csv = '﻿رقم اللوحة,اسم صاحب السيارة,رقم الوحدة,الجوال,نوع السيارة,لون السيارة,الحالة\r\n1234 ABJ,محمد أحمد,A-12,0550000000,تويوتا كامري,أبيض,نشط\r\n';
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    a.download = 'arakom-vehicles-template.csv';
-    a.click();
-  };
-
-  return (
-    <Modal open={open} onClose={close} title="استيراد جماعي للسيارات" wide>
-      <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">
-        ارفع ملف Excel (‎.xlsx) أو CSV. الصف الأول عناوين الأعمدة، والعمود الإلزامي هو «رقم اللوحة».
-        السيارات الموجودة مسبقاً تُحدَّث بياناتها.
-        <button type="button" className="ms-1 font-semibold text-brand-600 underline" onClick={template}>تحميل نموذج جاهز</button>
-      </p>
-      <input type="file" accept=".csv,.xlsx,text/csv" onChange={onFile} className="input file:me-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-1 file:text-brand-700" />
-      {error && <div className="mt-3 rounded-xl bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">{error}</div>}
-      {rows && !result && (
-        <>
-          <div className="mt-4 text-sm font-semibold">{rows.length} سيارة في الملف — معاينة أول 5:</div>
-          <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200 dark:border-ink-700">
-            <table className="w-full"><tbody className="divide-y divide-slate-100 dark:divide-ink-800">
-              {rows.slice(0, 5).map((r, i) => (
-                <tr key={i}><td className="td"><Plate plateKey={plateKey(r.plate)} raw={r.plate} /></td><td className="td">{r.owner_name}</td><td className="td">{r.unit_number}</td><td className="td">{r.phone}</td></tr>
-              ))}
-            </tbody></table>
-          </div>
-          <button type="button" className="btn-primary mt-4 w-full" disabled={busy} onClick={upload}>{busy ? 'جاري الاستيراد...' : `استيراد ${rows.length} سيارة`}</button>
-        </>
-      )}
-      {result && (
-        <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm dark:bg-ink-800">
-          <div>تمت إضافة <b>{result.created}</b> وتحديث <b>{result.updated}</b> سيارة.</div>
-          {result.errors.length > 0 && (
-            <ul className="mt-2 max-h-40 list-inside list-disc overflow-y-auto text-rose-600">
-              {result.errors.map((e, i) => <li key={i}>صف {e.row}: {e.error}</li>)}
-            </ul>
-          )}
-          <button type="button" className="btn-primary mt-3" onClick={close}>تم</button>
-        </div>
-      )}
-    </Modal>
   );
 }

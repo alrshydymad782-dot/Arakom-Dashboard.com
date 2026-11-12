@@ -6,6 +6,7 @@
  * - التحقق من التوقيع: سلة ترسل الترويسة X-Salla-Signature = HMAC-SHA256(جسم الطلب الخام، مفتاح الويب هوك)
  * - ربط الدفعة بالمجمع: بمعرّف عميل سلة، ثم البريد، ثم رقم الجوال
  * - مدة الاشتراك (شهر / 3 / 6 / سنة) تُستنتج من رمز المنتج SKU أو اسمه في سلة، مثل ARAKOM-3M أو "اشتراك 3 أشهر"
+ * - عميل جديد لم يُسجَّل من قبل: يُنشأ له حساب مجمع تلقائياً بنفس بريده وجواله في المتجر
  * - عند التعرف على المجمع والمدة: يُمدد الاشتراك فوراً
  *   وإلا: تُحفظ الدفعة "غير مطابقة" لتربطها الإدارة يدوياً
  * - كل طلب يُعالج مرة واحدة فقط (order_id فريد)
@@ -16,6 +17,7 @@ const config = require('../config');
 const { one, tx } = require('../db');
 const { fail } = require('../http');
 const subs = require('../services/subscriptions');
+const { createUser } = require('../services/users');
 const realtime = require('../realtime');
 
 const router = express.Router();
@@ -79,6 +81,23 @@ function findDuration(items) {
   return null;
 }
 
+// أول شراء من عميل جديد: إنشاء حساب مجمع له تلقائياً بنفس بريده وجواله في متجر سلة
+async function provisionTenant(cust) {
+  const { phoneKey, normEmail } = require('../services/identity');
+  const email = normEmail(cust.email);
+  if (!email && !phoneKey(cust.phone)) return null;
+  return tx(async (c) => {
+    const t = (await c.query(`INSERT INTO tenants (name, contact_name, phone, email, salla_customer_id, source)
+      VALUES ($1, $2, $3, $4, $5, 'salla') RETURNING *`,
+    [cust.name || 'عميل متجر أراكم', cust.name, cust.phone, email, cust.id])).rows[0];
+    // إن كان البريد أو الجوال مسجلاً لمستخدم آخر لا نُنشئ حساباً مكرراً (يربطه المدير يدوياً)
+    await createUser(c, { tenantId: t.id, role: 'tenant_admin', full_name: cust.name, email, phone: cust.phone, allowPasswordless: true })
+      .catch((e) => { if (e.status !== 409) throw e; });
+    realtime.emitAdmins('tenant:new', { id: t.id, name: t.name, source: 'salla' });
+    return t;
+  });
+}
+
 // تطبيق دفعة محفوظة على مجمع (يُستخدم من الويب هوك ومن لوحة الإدارة)
 async function applyPayment(paymentId, tenantId, monthsOverride) {
   return tx(async (c) => {
@@ -120,8 +139,9 @@ router.post('/', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) =>
   if (!config.salla.paidStatuses.includes(o.status)) return res.json({ ok: true, ignored: 'status', status: o.status });
 
   try {
-    const tenant = await findTenant(o.customer);
     const duration = findDuration(o.items);
+    let tenant = await findTenant(o.customer);
+    if (!tenant && duration) tenant = await provisionTenant(o.customer);
     const status = tenant && duration ? 'applied' : 'unmatched';
 
     // order_id فريد: إن وصلت نفس الدفعة مرة ثانية لا تُطبّق مرتين

@@ -30,23 +30,13 @@ export default function Billing() {
       <div className="card mb-4 p-5 text-sm leading-7">
         <h2 className="mb-2 text-base font-bold">طريقة الربط مع متجر سلة</h2>
         <ol className="list-inside list-decimal space-y-1.5">
-          <li>
-            أنشئ في متجرك منتجات الاشتراك الأربعة، واكتب المدة في <b>اسم المنتج</b> أو في <b>رمز المنتج (SKU)</b>:
-            <div className="mt-2 grid gap-2 sm:grid-cols-4">
-              {DURATIONS.map(([m, label]) => (
-                <div key={m} className="rounded-xl border border-slate-200 p-2.5 dark:border-ink-700">
-                  <div className="font-bold">{label}</div>
-                  <div className="font-mono text-xs text-slate-500" dir="ltr">SKU: ARAKOM-{m}M</div>
-                </div>
-              ))}
-            </div>
-          </li>
+          <li>اكتب مدة الاشتراك في اسم كل منتج في متجرك (مثل: «اشتراك شهر»، «اشتراك 3 أشهر»، «اشتراك 6 أشهر»، «اشتراك سنة»).</li>
           <li>في لوحة شركاء سلة ← Webhooks أضف هذا الرابط:
             <div className="my-1 rounded-xl bg-slate-100 p-2 font-mono text-xs dark:bg-ink-800" dir="ltr">{webhookUrl}</div>
             واختر الأحداث <b>order.created</b> و <b>order.status.updated</b> و <b>order.payment.updated</b>، واستراتيجية الأمان <b>Signature</b>.
           </li>
           <li>ضع مفتاح التوقيع في المتغير <code className="rounded bg-slate-100 px-1 dark:bg-ink-800">SALLA_WEBHOOK_SECRET</code> على السيرفر.</li>
-          <li>عند الدفع يتعرف النظام على المجمع من <b>الجوال أو البريد</b> المسجل في بياناته، ويضيف المدة فوراً وتُحسب الأيام المتبقية تلقائياً.</li>
+          <li>عند الدفع يتعرف النظام على العميل من <b>الجوال أو البريد</b>، ويضيف المدة فوراً. العميل الجديد يُنشأ له حساب تلقائياً ويدخل بنفس بريده وجواله في المتجر.</li>
         </ol>
       </div>
 

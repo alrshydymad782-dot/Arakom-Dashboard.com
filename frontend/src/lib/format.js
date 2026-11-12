@@ -32,6 +32,7 @@ export const REASONS = {
   auto_open_disabled: 'الفتح التلقائي معطل',
   no_plate: 'بدون لوحة',
   broker_offline: 'MQTT غير متصل',
+  open_all: 'فتح لأي سيارة',
 };
 
 export const DIRECTION = { in: 'دخول', out: 'خروج' };
