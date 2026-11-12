@@ -32,7 +32,16 @@ export default function SystemPage() {
           {d.mqtt.lastError && <div className="mt-1 text-xs text-rose-600" dir="ltr">{d.mqtt.lastError}</div>}
         </Box>
         <Box label="الرسائل">{d.mqtt.received.toLocaleString('en')} مستلمة · {d.mqtt.sent.toLocaleString('en')} مرسلة</Box>
-        <Box label="حجم قاعدة البيانات">{bytes(d.db.bytes)}</Box>
+        <Box label="مساحة السيرفر (الصور والملفات)">
+          {d.disk ? <>
+            {bytes(d.disk.free)} متبقية من {bytes(d.disk.total)}
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-ink-800">
+              <div className={`h-full rounded-full ${d.disk.used / d.disk.total > 0.85 ? 'bg-rose-500' : 'bg-brand-500'}`} style={{ width: `${Math.round((d.disk.used / d.disk.total) * 100)}%` }} />
+            </div>
+            {d.disk.used / d.disk.total > 0.85 && <div className="mt-1 text-xs text-rose-600">المساحة قاربت على الامتلاء: أضف قرصاً (Volume) للسيرفر</div>}
+          </> : '—'}
+          <div className="mt-1 text-xs font-normal text-slate-500">قاعدة البيانات: {bytes(d.db.bytes)}</div>
+        </Box>
         <Box label="مدة تشغيل الخادم">{Math.floor(d.uptime / 3600)} ساعة · Node {d.node}</Box>
       </div>
 

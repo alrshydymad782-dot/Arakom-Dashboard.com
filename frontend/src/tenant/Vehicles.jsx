@@ -3,6 +3,7 @@ import { api, qs } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { plateKey } from '../lib/plates';
 import { timeAgo } from '../lib/format';
+import { compressImage, kb } from '../lib/compress';
 import { Badge, Empty, Icon, Modal, PageHeader, Plate, Spinner, useAction, useToast } from '../components/ui';
 
 /*
@@ -54,13 +55,15 @@ export default function Vehicles() {
   const filePreview = useMemo(() => (form?.file && form.file.type !== 'application/pdf' ? URL.createObjectURL(form.file) : null), [form?.file]);
   useEffect(() => () => { if (filePreview) URL.revokeObjectURL(filePreview); }, [filePreview]);
 
-  const pickFile = (e) => {
-    const f = e.target.files?.[0];
+  const pickFile = async (e) => {
+    const picked = e.target.files?.[0];
     e.target.value = '';
-    if (!f) return;
-    if (!DOC_TYPES.includes(f.type)) return toast('الملف يجب أن يكون صورة (JPG / PNG) أو PDF', 'err');
+    if (!picked) return;
+    if (!DOC_TYPES.includes(picked.type)) return toast('الملف يجب أن يكون صورة (JPG / PNG) أو PDF', 'err');
+    // تصغير الصورة تلقائياً قبل الرفع لتوفير المساحة (PDF يُرفع كما هو)
+    const f = await compressImage(picked);
     if (f.size > MAX_DOC) return toast('حجم الملف أكبر من 5 ميجابايت', 'err');
-    setForm({ ...form, file: f });
+    setForm((cur) => ({ ...cur, file: f, originalSize: picked.size }));
   };
 
   const save = async (e) => {
@@ -149,7 +152,8 @@ export default function Vehicles() {
                   <span className="flex h-14 w-16 items-center justify-center rounded-lg bg-slate-100 text-slate-400 dark:bg-ink-800"><Icon name="upload" /></span>
                 )}
                 <span className="min-w-0 flex-1 text-sm">
-                  {form.file ? <><b className="block truncate">{form.file.name}</b><span className="text-xs text-slate-500">اضغط للاستبدال</span></>
+                  {form.file ? <><b className="block truncate">{form.file.name}</b><span className="text-xs text-slate-500">
+                    {form.originalSize && form.originalSize > form.file.size ? `صُغّرت من ${kb(form.originalSize)} إلى ${kb(form.file.size)} · ` : `${kb(form.file.size)} · `}اضغط للاستبدال</span></>
                     : form.document_path ? 'اضغط لاستبدال الملف المرفق' : 'اضغط لاختيار صورة أو PDF (أو التقاط صورة بالكاميرا)'}
                 </span>
                 <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={pickFile} />

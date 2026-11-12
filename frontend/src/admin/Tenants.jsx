@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
-import { daysLeftText, fmtDate } from '../lib/format';
+import { daysLeftText, fmtDate, bytes } from '../lib/format';
 import { Badge, Empty, Field, Icon, Modal, PageHeader, Spinner, Tabs, useAction, useToast } from '../components/ui';
 
 export const DAY_PRESETS = [30, 90, 180, 365];
@@ -75,7 +75,7 @@ export default function Tenants() {
                 <Link to={`/tenants/${t.id}`} className="min-w-48 flex-1">
                   <div className="font-bold">{t.name}</div>
                   <div className="text-xs text-slate-500">
-                    {t.ends_at ? `${daysLeftText(t.days_left)} · حتى ${fmtDate(t.ends_at)}` : 'بدون اشتراك'} · {t.gates} بوابة · {t.vehicles} سيارة
+                    {t.ends_at ? `${daysLeftText(t.days_left)} · حتى ${fmtDate(t.ends_at)}` : 'بدون اشتراك'} · {t.gates} بوابة · {t.vehicles} سيارة{Number(t.documents_bytes) ? ` (${bytes(t.documents_bytes)})` : ''}
                   </div>
                 </Link>
                 <LockBadge t={t} />

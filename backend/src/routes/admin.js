@@ -16,6 +16,7 @@ const access = require('../services/access');
 const vehicles = require('../services/vehicles');
 const documents = require('../services/documents');
 const mq = require('../mqtt/client');
+const storage = require('../services/storage');
 const listener = require('../mqtt/listener');
 const { build, arakomTopics } = require('../mqtt/protocol');
 
@@ -56,6 +57,7 @@ router.get('/tenants', h(async () => (await many(`SELECT t.id, t.name, t.contact
     s.ends_at, (s.ends_at - CURRENT_DATE) AS days_left, COALESCE(st.can_access, false) AS can_access,
     (SELECT COUNT(*) FROM gates g WHERE g.tenant_id = t.id)::int AS gates,
     (SELECT COUNT(*) FROM vehicles v WHERE v.tenant_id = t.id)::int AS vehicles,
+    (SELECT COALESCE(SUM(document_size), 0) FROM vehicles v WHERE v.tenant_id = t.id)::bigint AS documents_bytes,
     (SELECT COUNT(*) FROM cameras c JOIN gates g ON g.id = c.gate_id WHERE g.tenant_id = t.id AND c.is_online)::int AS cameras_online,
     (SELECT COUNT(*) FROM cameras c JOIN gates g ON g.id = c.gate_id WHERE g.tenant_id = t.id)::int AS cameras
   FROM tenants t LEFT JOIN subscriptions s ON s.tenant_id = t.id LEFT JOIN tenant_access_state st ON st.tenant_id = t.id
@@ -74,6 +76,9 @@ router.get('/tenants/:id', h(async (req) => {
   const { access_token: tok, ...tenant } = t;
   return { tenant, link: linkOf(tok), subscription, gates, vehicles: vcount.n, pending_plates: vcount.pending };
 }));
+
+// المساحة المستخدمة للعميل (صور السيارات + صور الكاميرات)
+router.get('/tenants/:id/storage', h((req) => storage.tenantUsage(intParam(req.params.id), { fresh: req.query.fresh === '1' })));
 
 // إضافة عميل: الاسم + عدد أيام الاشتراك (مثلاً 30) ← يُنشأ رابط لوحته تلقائياً
 router.post('/tenants', h(async (req) => {
@@ -312,7 +317,7 @@ router.get('/system', h(async () => {
       FROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC`),
     many('SELECT * FROM mqtt_events ORDER BY id DESC LIMIT 200'),
   ]);
-  return { mqtt: mq.state, db, tables, events, uptime: process.uptime(), node: process.version };
+  return { mqtt: mq.state, db, tables, events, uptime: process.uptime(), node: process.version, disk: storage.disk() };
 }));
 
 router.get('/audit', h(() => many(`SELECT a.*, u.username, t.name AS tenant_name FROM audit_log a

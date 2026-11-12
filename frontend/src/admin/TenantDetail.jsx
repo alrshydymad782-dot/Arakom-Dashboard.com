@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { plateKey } from '../lib/plates';
-import { fmtDate, timeAgo, daysLeftText } from '../lib/format';
+import { fmtDate, timeAgo, daysLeftText, bytes } from '../lib/format';
 import { Badge, Empty, Field, Icon, Modal, OnlineDot, PageHeader, Plate, Spinner, useAction } from '../components/ui';
 import OpenAllControl from '../components/OpenAllControl';
 import { DAY_PRESETS, LinkActions, LockBadge } from './Tenants';
@@ -16,11 +16,13 @@ export default function TenantDetail() {
   const [cars, setCars] = useState(null);
   const [modal, setModal] = useState(null); // { type, data }
   const [plates, setPlates] = useState({});
+  const [usage, setUsage] = useState(null);
   const [run, busy] = useAction();
 
   const load = useCallback(() => api(`/admin/tenants/${id}`).then(setD), [id]);
   const loadCars = useCallback(() => api(`/admin/tenants/${id}/vehicles`).then((r) => setCars(r.rows)), [id]);
-  useEffect(() => { load(); loadCars(); }, [load, loadCars]);
+  const loadUsage = useCallback((fresh) => api(`/admin/tenants/${id}/storage${fresh ? '?fresh=1' : ''}`).then(setUsage), [id]);
+  useEffect(() => { load(); loadCars(); loadUsage(); }, [load, loadCars, loadUsage]);
 
   if (!d) return <Spinner />;
   const { tenant: t, subscription: s } = d;
@@ -94,6 +96,32 @@ export default function TenantDetail() {
           </div>
         </section>
       </div>
+
+      {/* المساحة المستخدمة */}
+      <section className="card mt-4 p-5">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-bold">المساحة المستخدمة على السيرفر</h2>
+          <button type="button" className="btn-ghost btn-sm" onClick={() => loadUsage(true)}><Icon name="refresh" className="size-4" />تحديث</button>
+        </div>
+        {!usage ? <Spinner /> : (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl bg-slate-50 p-3 dark:bg-ink-800">
+              <div className="text-xs text-slate-500">صور ومستندات السيارات المسجلة</div>
+              <div className="text-lg font-bold">{bytes(usage.documents.bytes)}</div>
+              <div className="text-xs text-slate-500">{usage.documents.files} ملف · {usage.vehicles} سيارة</div>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-3 dark:bg-ink-800">
+              <div className="text-xs text-slate-500">صور الكاميرات</div>
+              <div className="text-lg font-bold">{bytes(usage.camera_images.bytes)}</div>
+              <div className="text-xs text-slate-500">{usage.camera_images.files} صورة · تُحذف تلقائياً بعد {usage.camera_images.keep_days} يوماً</div>
+            </div>
+            <div className="rounded-xl bg-brand-50 p-3 dark:bg-ink-800">
+              <div className="text-xs text-slate-500">المجموع</div>
+              <div className="text-lg font-bold text-brand-600 dark:text-brand-500">{bytes(usage.total_bytes)}</div>
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* البوابات */}
       <section className="mt-4">
