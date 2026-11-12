@@ -59,7 +59,7 @@ const config = {
     apiUrl: env('SALLA_API_URL', 'https://api.salla.dev/admin/v2'),
     tokenUrl: env('SALLA_TOKEN_URL', 'https://accounts.salla.sa/oauth2/token'),
     // رابط المتجر: يظهر لمن يحاول الدخول وهو غير مسجل في المتجر
-    storeUrl: env('SALLA_STORE_URL', ''),
+    storeUrl: env('SALLA_STORE_URL', 'https://arakom-store.com/ar'),
     // 1 = لا يدخل عملاء المجمعات إلا إذا كان حسابهم موجوداً في متجر أراكم
     storeLoginOnly: env('STORE_LOGIN_ONLY', '1') === '1',
   },
