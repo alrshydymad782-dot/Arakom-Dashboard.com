@@ -25,9 +25,10 @@ if [ ! -f .env ]; then
   if [ -z "${APP_HOST:-}" ]; then read -rp "نطاق لوحة العملاء [app.arakom.sa]: " APP_HOST; fi
   ADMIN_HOST=${ADMIN_HOST:-admin.arakom.sa}
   APP_HOST=${APP_HOST:-app.arakom.sa}
-  ADMIN_PASSWORD=$(rand 16)
+  # كلمتا مرور الإدارة والكاميرات: من متغيرات البيئة إن وُجدتا (مثلاً من Launch script)، وإلا تُولَّد عشوائياً
+  ADMIN_PASSWORD=${ADMIN_PASSWORD:-$(rand 16)}
   BACKEND_MQTT=$(rand 24)
-  CAMERA_MQTT=$(rand 16)
+  CAMERA_MQTT=${CAMERA_MQTT_PASSWORD:-$(rand 16)}
   RELAY_MQTT=$(rand 16)
   sed -i \
     -e "s|^ADMIN_HOST=.*|ADMIN_HOST=$ADMIN_HOST|" \
