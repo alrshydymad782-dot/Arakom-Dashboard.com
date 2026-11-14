@@ -20,8 +20,11 @@ rand() { openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c "${1:-32}"; }
 
 if [ ! -f .env ]; then
   cp .env.example .env
-  read -rp "نطاق لوحة الإدارة [admin.arakom.sa]: " ADMIN_HOST; ADMIN_HOST=${ADMIN_HOST:-admin.arakom.sa}
-  read -rp "نطاق لوحة العملاء [app.arakom.sa]: " APP_HOST; APP_HOST=${APP_HOST:-app.arakom.sa}
+  # النطاقان: من متغيرات البيئة إن وُجدا (التثبيت بأمر واحد)، وإلا يُسأل المستخدم
+  if [ -z "${ADMIN_HOST:-}" ]; then read -rp "نطاق لوحة الإدارة [admin.arakom.sa]: " ADMIN_HOST; fi
+  if [ -z "${APP_HOST:-}" ]; then read -rp "نطاق لوحة العملاء [app.arakom.sa]: " APP_HOST; fi
+  ADMIN_HOST=${ADMIN_HOST:-admin.arakom.sa}
+  APP_HOST=${APP_HOST:-app.arakom.sa}
   ADMIN_PASSWORD=$(rand 16)
   BACKEND_MQTT=$(rand 24)
   CAMERA_MQTT=$(rand 16)
