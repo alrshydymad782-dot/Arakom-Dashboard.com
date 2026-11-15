@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
+import PasswordModal from './PasswordModal';
 import { useAuth, useTheme } from '../lib/auth';
 import { useSocketConnected } from '../lib/realtime';
 import { Icon } from './ui';
@@ -12,6 +14,7 @@ export default function Layout({ nav, portalName, status, children }) {
   const live = useSocketConnected();
   const mobileNav = nav.filter((n) => !n.desktopOnly).slice(0, 5);
   const isAdmin = PORTAL === 'admin';
+  const [pw, setPw] = useState(false);
   // العميل: لا يوجد زر خروج (يدخل من رابطه الخاص)، ويظهر له عدد الأيام المتبقية
 
   const link = ({ isActive }) => `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${isActive
@@ -39,6 +42,7 @@ export default function Layout({ nav, portalName, status, children }) {
             <button type="button" onClick={toggleTheme} className="btn-ghost btn-sm flex-1"><Icon name={dark ? 'sun' : 'moon'} className="size-4" />{dark ? 'فاتح' : 'داكن'}</button>
             {isAdmin && <button type="button" onClick={logout} className="btn-ghost btn-sm flex-1"><Icon name="logout" className="size-4" />خروج</button>}
           </div>
+          {isAdmin && <button type="button" onClick={() => setPw(true)} className="btn-ghost btn-sm mt-2 w-full"><Icon name="shield" className="size-4" />تغيير كلمة المرور</button>}
         </div>
       </aside>
 
@@ -50,6 +54,7 @@ export default function Layout({ nav, portalName, status, children }) {
             <div className="text-xs text-slate-500 dark:text-slate-400">{status ? daysLeftText(status.days_left) : portalName}</div>
           </div>
           <button type="button" onClick={toggleTheme} className="rounded-xl p-2 hover:bg-slate-100 dark:hover:bg-ink-800" aria-label="الوضع الداكن"><Icon name={dark ? 'sun' : 'moon'} /></button>
+          {isAdmin && <button type="button" onClick={() => setPw(true)} className="rounded-xl p-2 hover:bg-slate-100 dark:hover:bg-ink-800" aria-label="تغيير كلمة المرور"><Icon name="shield" /></button>}
           {isAdmin && <button type="button" onClick={logout} className="rounded-xl p-2 hover:bg-slate-100 dark:hover:bg-ink-800" aria-label="خروج"><Icon name="logout" /></button>}
         </header>
 
@@ -69,6 +74,7 @@ export default function Layout({ nav, portalName, status, children }) {
           </NavLink>
         ))}
       </nav>
+      {isAdmin && <PasswordModal open={pw} onClose={() => setPw(false)} />}
     </div>
   );
 }
