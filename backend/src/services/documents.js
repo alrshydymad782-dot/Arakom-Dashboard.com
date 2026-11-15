@@ -71,9 +71,9 @@ async function createWithDocument(tenantId, buf, originalName, plateText) {
   try {
     return await tx(async (c) => {
       await c.query('SELECT 1 FROM tenants WHERE id = $1 FOR UPDATE', [tenantId]);
-      const lim = (await c.query(`SELECT s.max_vehicles, (SELECT COUNT(*)::int FROM vehicles WHERE tenant_id = $1) AS used
-        FROM tenants t LEFT JOIN subscriptions s ON s.tenant_id = t.id WHERE t.id = $1`, [tenantId])).rows[0];
-      if (lim?.max_vehicles != null && lim.used >= lim.max_vehicles) fail(409, `وصلت للحد الأقصى من السيارات (${lim.max_vehicles})`);
+      const lim = (await c.query(`SELECT t.max_vehicles, (SELECT COUNT(*)::int FROM vehicles WHERE tenant_id = $1) AS used
+        FROM tenants t WHERE t.id = $1`, [tenantId])).rows[0];
+      if (lim?.max_vehicles != null && lim.used >= lim.max_vehicles) fail(409, `وصلت للحد الأقصى (${lim.max_vehicles} لوحة). احذف لوحة قديمة أو تواصل مع أراكم لزيادة الحد`);
       const r = await c.query(`INSERT INTO vehicles (tenant_id, plate_key, plate_ar, plate_en, document_path, document_type, document_name,
           document_size, document_uploaded_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now()) RETURNING *`,
       [tenantId, plate?.key ?? null, plate?.displayAr || null, plate?.display || null, rel, type, name, buf.length]);

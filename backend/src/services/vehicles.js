@@ -16,9 +16,9 @@ function normalize(body) {
 }
 
 async function limits(client, tenantId) {
-  const r = await client.query('SELECT max_vehicles FROM subscriptions WHERE tenant_id = $1', [tenantId]);
+  const r = await client.query('SELECT max_vehicles FROM tenants WHERE id = $1', [tenantId]);
   const used = (await client.query('SELECT COUNT(*)::int AS n FROM vehicles WHERE tenant_id = $1', [tenantId])).rows[0].n;
-  // max = null يعني بدون حد (لم يُحدد حد في الاشتراك أو لا يوجد اشتراك بعد)
+  // الحد يحدده المدير لكل عميل (افتراضياً 500)، و null = بدون حد
   return { max_vehicles: r.rows[0]?.max_vehicles ?? null, used };
 }
 
@@ -28,7 +28,7 @@ async function create(tenantId, body) {
     // قفل صف الاشتراك لتجنب تجاوز الحد عند الإضافة المتزامنة
     await c.query('SELECT 1 FROM tenants WHERE id = $1 FOR UPDATE', [tenantId]);
     const lim = await limits(c, tenantId);
-    if (lim.max_vehicles != null && lim.used >= lim.max_vehicles) fail(409, `وصلت للحد الأقصى من السيارات في اشتراكك (${lim.max_vehicles})`);
+    if (lim.max_vehicles != null && lim.used >= lim.max_vehicles) fail(409, `وصلت للحد الأقصى (${lim.max_vehicles} لوحة). احذف لوحة قديمة أو تواصل مع أراكم لزيادة الحد`);
     const cols = ['tenant_id', ...Object.keys(v)];
     const vals = [tenantId, ...Object.values(v)];
     const r = await c.query(`INSERT INTO vehicles (${cols.join(',')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(',')}) RETURNING *`, vals);

@@ -98,8 +98,14 @@ export default function Vehicles() {
   return (
     <>
       <PageHeader title="السيارات المسموح لها"
-        subtitle={data ? `${data.rows.length} سيارة${data.max_vehicles ? ` من ${data.max_vehicles}` : ''}` : ''}
+        subtitle={data ? `${data.used ?? data.rows.length} لوحة${data.max_vehicles ? ` من ${data.max_vehicles}` : ''}` : ''}
         actions={canEdit && <button type="button" className="btn-primary" onClick={() => openForm(null)}><Icon name="plus" className="size-4" />إضافة سيارة</button>} />
+
+      {data?.max_vehicles && (data.used ?? 0) >= data.max_vehicles && (
+        <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+          وصلت للحد الأقصى ({data.max_vehicles} لوحة). لإضافة لوحة جديدة احذف لوحة قديمة، أو تواصل مع أراكم لزيادة الحد.
+        </div>
+      )}
 
       {pending > 0 && (
         <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">

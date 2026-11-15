@@ -51,9 +51,17 @@ router.get('/overview', h(async () => {
 }));
 
 // ---------- العملاء ----------
-const TENANT_FIELDS = ['name', 'contact_name', 'phone', 'city', 'notes', 'status'];
+const TENANT_FIELDS = ['name', 'contact_name', 'phone', 'city', 'notes', 'status', 'max_vehicles'];
+// الحد الأقصى للوحات: رقم من 1 إلى 100000، أو فارغ = بدون حد
+function checkLimit(f) {
+  if (f.max_vehicles === undefined) return;
+  if (f.max_vehicles === '' || f.max_vehicles === null) { f.max_vehicles = null; return; }
+  const n = Number(f.max_vehicles);
+  if (!Number.isInteger(n) || n < 1 || n > 100000) fail(400, 'الحد الأقصى للوحات يجب أن يكون رقماً من 1 إلى 100000');
+  f.max_vehicles = n;
+}
 
-router.get('/tenants', h(async () => (await many(`SELECT t.id, t.name, t.contact_name, t.phone, t.city, t.status, t.access_token, t.created_at,
+router.get('/tenants', h(async () => (await many(`SELECT t.id, t.name, t.contact_name, t.phone, t.city, t.status, t.access_token, t.created_at, t.max_vehicles,
     s.ends_at, (s.ends_at - CURRENT_DATE) AS days_left, COALESCE(st.can_access, false) AS can_access,
     (SELECT COUNT(*) FROM gates g WHERE g.tenant_id = t.id)::int AS gates,
     (SELECT COUNT(*) FROM vehicles v WHERE v.tenant_id = t.id)::int AS vehicles,
@@ -85,6 +93,7 @@ router.post('/tenants', h(async (req) => {
   const b = req.body || {};
   if (!String(b.name || '').trim()) fail(400, 'اسم العميل مطلوب');
   const f = pickFields(b, TENANT_FIELDS.filter((k) => k !== 'status'));
+  checkLimit(f);
   const t = await tx(async (c) => {
     const cols = [...Object.keys(f), 'access_token'];
     const row = (await c.query(`INSERT INTO tenants (${cols.join(',')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(',')}) RETURNING *`,
@@ -98,6 +107,7 @@ router.post('/tenants', h(async (req) => {
 
 router.patch('/tenants/:id', h(async (req) => {
   const f = pickFields(req.body, TENANT_FIELDS);
+  checkLimit(f);
   if (f.status && !['active', 'suspended'].includes(f.status)) fail(400, 'الحالة غير صحيحة');
   const q = updateSql('tenants', { ...f, updated_at: new Date() }, 'id = $1', [intParam(req.params.id)]);
   const t = await one(q.text, q.values);

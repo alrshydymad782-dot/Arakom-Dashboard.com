@@ -59,7 +59,7 @@ export default function Tenants() {
   return (
     <>
       <PageHeader title="العملاء ولوحاتهم" subtitle={rows ? `${rows.length} عميل` : ''}
-        actions={<button type="button" className="btn-primary" onClick={() => setForm({ name: '', contact_name: '', phone: '', city: '', notes: '', days: 30 })}>
+        actions={<button type="button" className="btn-primary" onClick={() => setForm({ name: '', contact_name: '', phone: '', city: '', notes: '', days: 30, max_vehicles: 500 })}>
           <Icon name="plus" className="size-4" />عميل جديد</button>} />
 
       <div className="mb-4 flex flex-wrap gap-3">
@@ -75,7 +75,7 @@ export default function Tenants() {
                 <Link to={`/tenants/${t.id}`} className="min-w-48 flex-1">
                   <div className="font-bold">{t.name}</div>
                   <div className="text-xs text-slate-500">
-                    {t.ends_at ? `${daysLeftText(t.days_left)} · حتى ${fmtDate(t.ends_at)}` : 'بدون اشتراك'} · {t.gates} بوابة · {t.vehicles} سيارة{Number(t.documents_bytes) ? ` (${bytes(t.documents_bytes)})` : ''}
+                    {t.ends_at ? `${daysLeftText(t.days_left)} · حتى ${fmtDate(t.ends_at)}` : 'بدون اشتراك'} · {t.gates} بوابة · {t.vehicles}{t.max_vehicles ? ` من ${t.max_vehicles}` : ''} لوحة{Number(t.documents_bytes) ? ` (${bytes(t.documents_bytes)})` : ''}
                   </div>
                 </Link>
                 <LockBadge t={t} />
@@ -95,6 +95,7 @@ export default function Tenants() {
             <Field label="الجوال (لإرسال الرابط عبر واتساب)"><input className="input" dir="ltr" type="tel" value={form.phone} onChange={set('phone')} placeholder="05xxxxxxxx" /></Field>
             <Field label="المدينة"><input className="input" value={form.city} onChange={set('city')} /></Field>
             <Field label="ملاحظات"><input className="input" value={form.notes} onChange={set('notes')} /></Field>
+            <Field label="الحد الأقصى للوحات"><input className="input" type="number" min="1" max="100000" required value={form.max_vehicles} onChange={set('max_vehicles')} /></Field>
             <div className="sm:col-span-2">
               <span className="label">مدة الاشتراك (تُقفل اللوحة تلقائياً بعدها)</span>
               <div className="flex flex-wrap items-center gap-2">

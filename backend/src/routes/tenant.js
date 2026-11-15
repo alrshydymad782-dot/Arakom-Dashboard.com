@@ -80,7 +80,13 @@ router.post('/gates/:id/open-all', h(async (req) => {
 }));
 
 // ---------- السيارات ----------
-router.get('/vehicles', h(async (req) => ({ rows: await vehicles.list(tid(req), req.query) })));
+router.get('/vehicles', h(async (req) => {
+  const [rows, t] = await Promise.all([
+    vehicles.list(tid(req), req.query),
+    one('SELECT max_vehicles, (SELECT COUNT(*)::int FROM vehicles WHERE tenant_id = $1) AS used FROM tenants WHERE id = $1', [tid(req)]),
+  ]);
+  return { rows, max_vehicles: t?.max_vehicles ?? null, used: t?.used ?? rows.length };
+}));
 router.post('/vehicles', h(async (req) => {
   const v = await vehicles.create(tid(req), { plate: req.body?.plate });
   await audit(req.user, 'vehicle_add', { plate: v.plate_key }, tid(req));

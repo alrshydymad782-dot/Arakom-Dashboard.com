@@ -48,6 +48,7 @@ export default function TenantDetail() {
     if (m === 'info') return run(() => api(`/admin/tenants/${id}`, { method: 'PATCH', body: form }), 'تم الحفظ').then(done);
     if (m === 'days') return addDays(form.days);
     if (m === 'end') return run(() => api(`/admin/tenants/${id}/subscription`, { method: 'PATCH', body: form }), 'تم تعديل تاريخ الانتهاء').then(done);
+    if (m === 'limit') return run(() => api(`/admin/tenants/${id}`, { method: 'PATCH', body: { max_vehicles: form.unlimited ? null : form.max_vehicles } }), 'تم حفظ الحد الأقصى').then(done);
     if (m === 'gate') return run(() => (form.id ? api(`/admin/gates/${form.id}`, { method: 'PATCH', body: form }) : api(`/admin/tenants/${id}/gates`, { body: form })), 'تم حفظ البوابة').then(done);
     return null;
   };
@@ -168,7 +169,16 @@ export default function TenantDetail() {
 
       {/* السيارات */}
       <section className="card mt-4 overflow-hidden">
-        <div className="border-b border-slate-200 px-4 py-3 font-bold dark:border-ink-700">السيارات المسجلة ({cars?.length ?? '…'})</div>
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-3 dark:border-ink-700">
+          <span className="flex-1 font-bold">
+            اللوحات المسجلة ({cars?.length ?? '…'}{t.max_vehicles ? ` من ${t.max_vehicles}` : ' · بدون حد'})
+            {t.max_vehicles && cars && cars.length >= t.max_vehicles && <Badge tone="red">وصل للحد</Badge>}
+          </span>
+          <button type="button" className="btn-ghost btn-sm"
+            onClick={() => setModal({ type: 'limit', data: { max_vehicles: t.max_vehicles ?? 500, unlimited: t.max_vehicles == null } })}>
+            <Icon name="edit" className="size-4" />الحد الأقصى: {t.max_vehicles ?? 'بدون حد'}
+          </button>
+        </div>
         {!cars ? <Spinner /> : !cars.length ? <Empty>لم يضف العميل سيارات بعد</Empty> : (
           <ul className="divide-y divide-slate-100 dark:divide-ink-800">
             {cars.map((v) => (
@@ -196,7 +206,7 @@ export default function TenantDetail() {
         )}
       </section>
 
-      <Modal open={!!modal} onClose={close} title={{ info: 'بيانات العميل', days: 'إضافة أيام', end: 'تاريخ انتهاء الاشتراك', gate: form?.id ? 'تعديل البوابة' : 'بوابة جديدة' }[modal?.type]}>
+      <Modal open={!!modal} onClose={close} title={{ limit: 'الحد الأقصى للوحات', info: 'بيانات العميل', days: 'إضافة أيام', end: 'تاريخ انتهاء الاشتراك', gate: form?.id ? 'تعديل البوابة' : 'بوابة جديدة' }[modal?.type]}>
         {form && (
           <form onSubmit={submit} className="grid gap-3">
             {modal.type === 'info' && <>
@@ -205,6 +215,18 @@ export default function TenantDetail() {
               <Field label="الجوال"><input className="input" dir="ltr" value={form.phone} onChange={setF('phone')} /></Field>
               <Field label="المدينة"><input className="input" value={form.city} onChange={setF('city')} /></Field>
               <Field label="ملاحظات"><textarea className="input" rows="2" value={form.notes} onChange={setF('notes')} /></Field>
+            </>}
+            {modal.type === 'limit' && <>
+              <Field label="أقصى عدد لوحات يستطيع العميل تسجيلها">
+                <input className="input" type="number" min="1" max="100000" required={!form.unlimited} disabled={form.unlimited} value={form.max_vehicles} onChange={setF('max_vehicles')} />
+              </Field>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={!!form.unlimited} onChange={(e) => setModal({ ...modal, data: { ...form, unlimited: e.target.checked } })} />
+                بدون حد
+              </label>
+              {!form.unlimited && cars && Number(form.max_vehicles) < cars.length && (
+                <p className="text-xs text-amber-700">العميل مسجل {cars.length} لوحة حالياً. لن تُحذف لوحاته، لكنه لن يستطيع الإضافة حتى ينزل تحت الحد.</p>
+              )}
             </>}
             {modal.type === 'days' && <Field label="عدد الأيام المضافة"><input className="input" type="number" min="1" max="3650" required value={form.days} onChange={setF('days')} /></Field>}
             {modal.type === 'end' && <Field label="تُقفل لوحة العميل بعد هذا التاريخ"><input className="input" type="date" required value={form.ends_at} onChange={setF('ends_at')} /></Field>}
