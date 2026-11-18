@@ -34,8 +34,8 @@ let seq = 0;
 
 function startCamera(sn, index) {
   const inout = index % 2 === 0 ? 'in' : 'out';
-  let pubtopic = `aiot/plate/${sn}`;
-  let subtopic = `device/plate/${sn}`;
+  let pubtopic = process.env.SIM_PUBTOPIC || `aiot/plate/${sn}`;
+  let subtopic = process.env.SIM_SUBTOPIC || `device/plate/${sn}`;
   const tag = `[${inout === 'in' ? 'دخول' : 'خروج'} ${sn}]`;
 
   const client = mqtt.connect(url, {

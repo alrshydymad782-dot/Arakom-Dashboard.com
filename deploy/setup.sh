@@ -68,5 +68,7 @@ CRED
 fi
 
 docker compose up -d --build
+# إعادة تحميل صلاحيات Mosquitto (ملف acl) بعد التحديث
+docker compose kill -s HUP mosquitto >/dev/null 2>&1 || true
 echo
 echo "تم التشغيل. البيانات السرية في: deploy/CREDENTIALS.txt"

@@ -38,7 +38,7 @@ const config = {
     registerTopic: env('MQTT_REGISTER_TOPIC', '/serverAll'),
     // المواضيع التي يستمع لها الخادم. arakom/gates/{gate_id}/readings هو الموضوع المعتمد للقراءات،
     // و aiot/# هو الموضوع الافتراضي للكاميرات قبل إعادة ضبطها
-    subscribe: env('MQTT_SUBSCRIBE', 'arakom/gates/+/readings,arakom/gates/+/readings/+,aiot/#').split(',').map((s) => s.trim()).filter(Boolean),
+    subscribe: env('MQTT_SUBSCRIBE', '#').split(',').map((s) => s.trim()).filter(Boolean),
     // موضوع أمر الفتح الموحد (لأي ريليه خارجي يستمع لأراكم)
     gateCommandTopic: env('MQTT_GATE_COMMAND_TOPIC', 'arakom/gates/{gate_id}/command'),
     // إرسال أمر iooutput بصيغة المصنع لموضوع الكاميرا نفسها (الكاميرا تتحكم بالريليه عبر منفذ IO)

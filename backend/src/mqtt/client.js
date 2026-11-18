@@ -42,6 +42,8 @@ function connect(onMessage) {
   });
   client.on('error', (e) => { state.lastError = e.message; console.error('[mqtt]', e.message); });
   client.on('message', (topic, payload) => {
+    // نستمع لكل المواضيع (#)، فنتجاهل الرسائل التي أرسلناها نحن (أوامر الكاميرات والريليه)
+    if (isOwn(payload)) return;
     state.received++;
     state.lastMessageAt = new Date().toISOString();
     Promise.resolve(onMessage(topic, payload)).catch((err) => {
@@ -52,9 +54,22 @@ function connect(onMessage) {
   return client;
 }
 
+// آخر الرسائل المرسلة منا (لتجاهل صداها عند الاستماع لكل المواضيع)
+const recent = new Map();
+function isOwn(payload) {
+  const key = payload.length < 4096 ? payload.toString() : null;
+  if (!key || !recent.has(key)) return false;
+  recent.delete(key);
+  return true;
+}
+
 function publish(topic, payload, qos = 1) {
   if (!client || !state.connected) throw Object.assign(new Error('الخادم غير متصل بوسيط MQTT حالياً'), { status: 503 });
-  client.publish(topic, typeof payload === 'string' ? payload : JSON.stringify(payload), { qos });
+  const body = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  const now = Date.now();
+  for (const [k, t] of recent) if (now - t > 60e3) recent.delete(k);
+  if (body.length < 4096) recent.set(body, now);
+  client.publish(topic, body, { qos });
   state.sent++;
 }
 

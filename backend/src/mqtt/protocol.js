@@ -43,9 +43,9 @@ const build = {
   barrierState: () => ({ cmd: 'barrieState', msg_id: newMsgId() }),
   // 2.2.1 إعادة تشغيل الكاميرا
   restart: () => ({ cmd: 'dev_restart', msg_id: newMsgId() }),
-  // 2.2.2 ضبط وقت الكاميرا. رموز المنطقة الزمنية في البروتوكول معكوسة الإشارة:
-  // مثال المصنع يستخدم 20 ("GMT-8") للصين أي UTC+8، لذلك السعودية UTC+3 = 15
-  syncTime: (timeZoneCode = 15) => ({ cmd: 'syncSysTime', msg_id: newMsgId(), time_zone: timeZoneCode, time_stamp: String(utcNow()) }),
+  // 2.2.2 ضبط وقت الكاميرا. حسب رد المصنع: time_zone = 9 يقابل GMT+3 (السعودية)
+  // يمكن تغييره بالمتغير CAMERA_TIME_ZONE إن ظهرت ساعة الكاميرا خاطئة بعد الضبط
+  syncTime: (timeZoneCode = Number(process.env.CAMERA_TIME_ZONE || 9)) => ({ cmd: 'syncSysTime', msg_id: newMsgId(), time_zone: timeZoneCode, time_stamp: String(utcNow()) }),
   // 7.2.9 تغيير إعدادات MQTT في الكاميرا (لتوحيد المواضيع وطريقة رفع الصور)
   setMqttParam: (fields) => ({ cmd: 'set_mqtt_param', msg_id: newMsgId(), ...fields }),
 };

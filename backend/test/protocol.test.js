@@ -23,10 +23,10 @@ test('ردود التسجيل والنتيجة تعيد نفس msg_id', () => {
   assert.deepStrictEqual(build.resultRsp('Y'), { cmd: 'result_rsp', status: 'ok', msg_id: 'Y' });
 });
 
-test('ضبط الوقت: السعودية رمزها 15 في البروتوكول', () => {
+test('ضبط الوقت: السعودية رمزها 9 (حسب رد المصنع)', () => {
   const m = build.syncTime();
   assert.strictEqual(m.cmd, 'syncSysTime');
-  assert.strictEqual(m.time_zone, 15);
+  assert.strictEqual(m.time_zone, 9);
   assert.strictEqual(typeof m.time_stamp, 'string');
 });
 

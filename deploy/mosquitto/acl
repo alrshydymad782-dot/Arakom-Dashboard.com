@@ -4,14 +4,11 @@
 user arakom-backend
 topic readwrite #
 
-# الكاميرات: تسجّل على /serverAll وتنشر القراءات وتستقبل الأوامر
+# الكاميرات: مواضيعها تختلف حسب إعدادات المصنع (مثل qvup / qvdown)، فنسمح لها بكل المواضيع
+# ما عدا أوامر الريليه الخارجي (حتى لا تفتح كاميرا بوابة عميل آخر)
 user camera
-topic write /serverAll
-topic readwrite aiot/#
-topic read device/#
-topic write arakom/gates/+/readings
-topic write arakom/gates/+/readings/+
-topic read arakom/devices/#
+topic deny arakom/gates/+/command
+topic readwrite #
 
 # جهاز ريليه خارجي (اختياري): يستقبل أمر OPEN_BARRIER فقط
 user relay
